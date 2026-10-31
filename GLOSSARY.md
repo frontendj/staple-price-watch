@@ -1,10 +1,10 @@
-# Staple Price Book
+# Staple Price Watch
 
 A personal record of what staple groceries actually cost, used to observe inflation in a small repeated basket. It is not a budget, shopping list, or receipt archive.
 
 ## Language
 
-**Staple Price Book**:
+**Staple Price Watch**:
 The application. A local collection of Visits, Observations, Categories, and Shops plus the statistics derived from them.
 _Avoid_: receipt scanner, expense tracker, budget app, price comparison site
 

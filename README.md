@@ -1,4 +1,4 @@
-# Staple Price Book
+# Staple Price Watch
 
 A small, vibecoded app for watching how the groceries I actually buy get more expensive.
 

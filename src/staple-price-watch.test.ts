@@ -1,12 +1,12 @@
 import { expect, test } from "vitest";
 import {
-  createStaplePriceBook,
+  createStaplePriceWatch,
   quoteUnitPrice,
   type BookResult,
-  type StaplePriceBook,
-} from "./staple-price-book";
+  type StaplePriceWatch,
+} from "./staple-price-watch";
 
-function accept<T>(result: BookResult<T>): { book: StaplePriceBook; value: T } {
+function accept<T>(result: BookResult<T>): { book: StaplePriceWatch; value: T } {
   if (!result.ok) {
     throw new Error(result.error.code);
   }
@@ -14,7 +14,7 @@ function accept<T>(result: BookResult<T>): { book: StaplePriceBook; value: T } {
 }
 
 test("an empty book seeds the starter Categories and Shops", () => {
-  const book = createStaplePriceBook({ today: () => "2026-10-31" });
+  const book = createStaplePriceWatch({ today: () => "2026-10-31" });
 
   expect(
     book.categories().map((category) => ({
@@ -49,7 +49,7 @@ test("an empty book seeds the starter Categories and Shops", () => {
 });
 
 test("completing a Visit with Eggs 12 items at £2.40 stores a Unit Price of 20 pence per item", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!eggs || !tesco) {
@@ -100,7 +100,7 @@ test("completing a Visit with Eggs 12 items at £2.40 stores a Unit Price of 20 
 });
 
 test("Milk 568 ml at £1.15 stores 0.568 L and keeps full Unit Price precision until display", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const milk = book.categories().find((category) => category.name === "Milk");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!milk || !tesco) {
@@ -131,7 +131,7 @@ test("Milk 568 ml at £1.15 stores 0.568 L and keeps full Unit Price precision u
 });
 
 test("350 g at 210 pence stores a Unit Price of 600 pence per kg", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const chicken = book.categories().find((category) => category.name === "Chicken wings");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!chicken || !tesco) {
@@ -162,7 +162,7 @@ test("350 g at 210 pence stores a Unit Price of 600 pence per kg", () => {
 });
 
 test("Milk cannot be saved in items, and zero price or quantity is rejected", () => {
-  const book = createStaplePriceBook({ today: () => "2026-10-31" });
+  const book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const milk = book.categories().find((category) => category.name === "Milk");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!milk || !tesco) {
@@ -209,7 +209,7 @@ test("Milk cannot be saved in items, and zero price or quantity is rejected", ()
 });
 
 test("the next entry prefills the last quantity and unit, never the price", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!eggs || !tesco) {
@@ -235,7 +235,7 @@ test("the next entry prefills the last quantity and unit, never the price", () =
 });
 
 test("a started Visit with an Observation stays a Draft until it is completed", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!eggs || !tesco) {
@@ -257,7 +257,7 @@ test("a started Visit with an Observation stays a Draft until it is completed", 
 });
 
 test("completing a second Visit for the same date, Shop, and Category warns, then can be acknowledged", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!eggs || !tesco) {
@@ -299,7 +299,7 @@ test("completing a second Visit for the same date, Shop, and Category warns, the
 });
 
 test("merging Baking potatoes into a renamed Category keeps its Unit Price in that Category", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const potatoes = book.categories().find((category) => category.name === "Baking potatoes");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!potatoes || !tesco) {
@@ -340,7 +340,7 @@ test("merging Baking potatoes into a renamed Category keeps its Unit Price in th
 });
 
 test("three Observations in one month are not a Trend until another month is added", () => {
-  let book = createStaplePriceBook({ today: () => "2026-02-01" });
+  let book = createStaplePriceWatch({ today: () => "2026-02-01" });
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!eggs || !tesco) {
@@ -396,7 +396,7 @@ test("three Observations in one month are not a Trend until another month is add
 });
 
 test("an even number of Unit Prices uses the mean of the two middle values", () => {
-  let book = createStaplePriceBook({ today: () => "2026-01-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-01-31" });
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!eggs || !tesco) {
@@ -423,7 +423,7 @@ test("an even number of Unit Prices uses the mean of the two middle values", () 
 });
 
 test("excluding Promotions drops them from the Monthly Median and the sample count", () => {
-  let book = createStaplePriceBook({ today: () => "2026-01-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-01-31" });
   const milk = book.categories().find((category) => category.name === "Milk");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
   if (!milk || !tesco) {
@@ -464,7 +464,7 @@ test("excluding Promotions drops them from the Monthly Median and the sample cou
 });
 
 test("Backup replace restores the previous book and invalid JSON is rejected", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const backup = book.exportBackup();
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
@@ -502,7 +502,7 @@ test("Backup replace restores the previous book and invalid JSON is rejected", (
 });
 
 test("CSV has one row per completed Observation and skips Drafts", () => {
-  let book = createStaplePriceBook({ today: () => "2026-10-31" });
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const milk = book.categories().find((category) => category.name === "Milk");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");

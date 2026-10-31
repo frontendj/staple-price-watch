@@ -9,9 +9,9 @@ import {
   unitsFor,
   type BookErrorCode,
   type BookResult,
-  type StaplePriceBook,
+  type StaplePriceWatch,
   type UnitFamily,
-} from "./staple-price-book";
+} from "./staple-price-watch";
 
 type Screen =
   | { name: "home" }
@@ -44,12 +44,12 @@ const errors: Record<BookErrorCode, string> = {
   "empty-visit": "Deleting this item would leave the visit empty.",
   "category-in-use": "Move or delete its observations before archiving this category.",
   "incompatible-merge": "Merge only two active categories that share a unit.",
-  "invalid-backup": "That file is not a staple price book backup.",
+  "invalid-backup": "That file is not a Staple Price Watch backup.",
   "nothing-to-undo": "There is no restore to undo.",
 };
 
 export function App() {
-  const [book, setBook] = useState<StaplePriceBook | null>(null);
+  const [book, setBook] = useState<StaplePriceWatch | null>(null);
   const [screen, setScreen] = useState<Screen>({ name: "home" });
   const [notice, setNotice] = useState("");
   const [persistence, setPersistence] = useState<"unknown" | "granted" | "not-granted">("unknown");
@@ -90,7 +90,7 @@ export function App() {
     return result;
   }
 
-  async function rememberPersistence(next: StaplePriceBook): Promise<void> {
+  async function rememberPersistence(next: StaplePriceWatch): Promise<void> {
     if (next.persistenceWasPrompted()) {
       return;
     }
@@ -178,7 +178,7 @@ export function App() {
 }
 
 function Home(props: {
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   offlineReady: boolean;
   persistence: "unknown" | "granted" | "not-granted";
   onOpen: (screen: Screen) => void;
@@ -189,7 +189,7 @@ function Home(props: {
     .sort((left, right) => right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt));
   return (
     <>
-      <h1>Staple Price Book</h1>
+      <h1>Staple Price Watch</h1>
       {props.offlineReady ? <p>Ready offline</p> : <p className="muted">Waiting for the app shell to cache.</p>}
       {props.persistence === "granted" ? (
         <p className="muted">Browser storage persistence is granted. This is not a backup.</p>
@@ -247,7 +247,7 @@ function Home(props: {
 }
 
 function NewVisit(props: {
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   onCancel: () => void;
   onCreate: (date: string, shopId: string) => void;
 }) {
@@ -282,13 +282,13 @@ function NewVisit(props: {
 }
 
 function VisitScreen(props: {
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   visitId: string;
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
   onHome: () => void;
   onAdd: () => void;
   onEdit: (observationId: string) => void;
-  onCompleted: (book: StaplePriceBook) => Promise<void>;
+  onCompleted: (book: StaplePriceWatch) => Promise<void>;
 }) {
   const visit = props.book.visit(props.visitId);
   const [duplicate, setDuplicate] = useState(false);
@@ -431,7 +431,7 @@ function VisitScreen(props: {
 }
 
 function ObservationScreen(props: {
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   visitId: string;
   observationId?: string;
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
@@ -666,7 +666,7 @@ function ObservationScreen(props: {
   );
 }
 
-function StatisticsScreen(props: { book: StaplePriceBook; onHome: () => void; onOpen: (screen: Screen) => void }) {
+function StatisticsScreen(props: { book: StaplePriceWatch; onHome: () => void; onOpen: (screen: Screen) => void }) {
   const categories = props.book.categories();
   const [categoryId, setCategoryId] = useState(props.book.categoryChoices()[0]?.id ?? categories[0]?.id ?? "");
   const [shopId, setShopId] = useState("");
@@ -772,7 +772,7 @@ function StatisticsScreen(props: { book: StaplePriceBook; onHome: () => void; on
 }
 
 function PriceChart(props: {
-  report: ReturnType<StaplePriceBook["statistics"]>;
+  report: ReturnType<StaplePriceWatch["statistics"]>;
   unitLabel: string;
 }) {
   const prices = [
@@ -821,7 +821,7 @@ function PriceChart(props: {
 }
 
 function CategoriesScreen(props: {
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
   onHome: () => void;
 }) {
@@ -931,7 +931,7 @@ function CategoriesScreen(props: {
 }
 
 function ShopsScreen(props: {
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
   onHome: () => void;
 }) {
@@ -992,7 +992,7 @@ function ShopsScreen(props: {
 }
 
 function BackupScreen(props: {
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   persistence: "unknown" | "granted" | "not-granted";
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
   onHome: () => void;
@@ -1011,7 +1011,7 @@ function BackupScreen(props: {
         onClick={() => {
           const backup = props.book.exportBackup();
           void saveTextFile(
-            `staple-price-book-${backup.exportedAt.slice(0, 10)}.json`,
+            `staple-price-watch-${backup.exportedAt.slice(0, 10)}.json`,
             JSON.stringify(backup, null, 2),
             "application/json",
           );
@@ -1063,7 +1063,7 @@ function BackupScreen(props: {
   );
 }
 
-function shopName(book: StaplePriceBook, shopId: string): string {
+function shopName(book: StaplePriceWatch, shopId: string): string {
   return book.shops().find((shop) => shop.id === shopId)?.name ?? "Shop";
 }
 

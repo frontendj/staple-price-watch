@@ -6,7 +6,7 @@
 
 **Status:** done
 
-Read `.scratch/staple-price-book/spec.md` decisions 2 and the Dexie note in Further Notes. Persistence loads and saves a snapshot. Rules stay in `StaplePriceBook`.
+Read `.scratch/staple-price-watch/spec.md` decisions 2 and the Dexie note in Further Notes. Persistence loads and saves a snapshot. Rules stay in `StaplePriceWatch`.
 
 - [x] A completed Visit is still there after a reload
 - [x] A Draft is still there after a reload

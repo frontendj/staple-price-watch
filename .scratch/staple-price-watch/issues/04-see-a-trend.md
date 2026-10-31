@@ -6,7 +6,7 @@
 
 **Status:** done
 
-Read `.scratch/staple-price-book/spec.md` User Stories 48–58 and Statistics. The screen renders the book's query. It does not recompute medians in the component.
+Read `.scratch/staple-price-watch/spec.md` User Stories 48–58 and Statistics. The screen renders the book's query. It does not recompute medians in the component.
 
 - [x] Default view is one Category, all Shops, Promotions included
 - [x] Months with no Observations are gaps

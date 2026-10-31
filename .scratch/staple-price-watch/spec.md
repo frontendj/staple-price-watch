@@ -1,8 +1,8 @@
-# Staple Price Book MVP
+# Staple Price Watch MVP
 
 Status: ready-for-agent
 
-The repo folder is named `receipt-scanner` for historical reasons. The product is the Staple Price Book. Use `GLOSSARY.md` terms exactly. Read `docs/adr/0001-local-first-pwa.md` before choosing a platform.
+The product is Staple Price Watch. Use `GLOSSARY.md` terms exactly. Read `docs/adr/0001-local-first-pwa.md` before choosing a platform.
 
 ## Problem Statement
 
@@ -98,12 +98,12 @@ A local-first installable web app on my Android phone. After a shop I start a Vi
 2. Persist with Dexie over IndexedDB. Precache the full app shell with `vite-plugin-pwa` / Workbox. Validate Backup files with Zod.
 3. Host one stable HTTPS origin. Origin changes strand the database unless the Shopper restores a Backup.
 4. Locale is United Kingdom only: currency GBP, dates as local calendar dates, copy in English.
-5. The implementable domain lives in one module, StaplePriceBook. UI, Dexie, file pickers, and the service worker are adapters around it.
+5. The implementable domain lives in one module, StaplePriceWatch. UI, Dexie, file pickers, and the service worker are adapters around it.
 
 ### The seam
 
-6. Tests and UI both talk to StaplePriceBook. Do not add other domain seams. Persistence adapters save and load a snapshot; they do not own rules.
-7. StaplePriceBook is an in-memory book with command / query operations. Construct it empty or from a validated snapshot. Every mutating command returns a new book state or a typed error; do not throw for expected validation failures.
+6. Tests and UI both talk to StaplePriceWatch. Do not add other domain seams. Persistence adapters save and load a snapshot; they do not own rules.
+7. StaplePriceWatch is an in-memory book with command / query operations. Construct it empty or from a validated snapshot. Every mutating command returns a new book state or a typed error; do not throw for expected validation failures.
 8. Time is injected: `today()` returns the Shopper’s current local calendar date. Tests pass a fixed date. Do not read `new Date()` inside domain rules.
 
 ### Identifiers and records
@@ -206,11 +206,11 @@ A local-first installable web app on my Android phone. After a shop I start a Vi
 
 ## Testing Decisions
 
-A good test names a Shopper-visible rule, drives StaplePriceBook through its commands, and asserts on queries or returned errors. It does not open Dexie, React, or the DOM. Expected numbers are literals from this spec (350 g at £2.10 → 600 pence/kg), never recomputed with the same helper the production code uses.
+A good test names a Shopper-visible rule, drives StaplePriceWatch through its commands, and asserts on queries or returned errors. It does not open Dexie, React, or the DOM. Expected numbers are literals from this spec (350 g at £2.10 → 600 pence/kg), never recomputed with the same helper the production code uses.
 
 ### Seam under test
 
-**StaplePriceBook** (in-memory, injected `today`).
+**StaplePriceWatch** (in-memory, injected `today`).
 
 This is the only required seam. It catches validation, unit conversion, Visit completion, duplicate warning, merge/archive, defaults, Backup round-trip, CSV contents, Monthly Median, evidence gate, and Trend maths.
 
@@ -265,7 +265,7 @@ The MVP is done when a physical Android Chrome install can: add the PWA, go offl
 
 ### Suggested build order for a smaller model
 
-1. StaplePriceBook in TypeScript with an in-memory snapshot and the tests above. No UI.
+1. StaplePriceWatch in TypeScript with an in-memory snapshot and the tests above. No UI.
 2. Vite React shell that calls the book and redraws from queries.
 3. Dexie adapter: load snapshot on boot, write snapshot after each successful command.
 4. Visit / Observation screens, then statistics, then Category/Shop management.

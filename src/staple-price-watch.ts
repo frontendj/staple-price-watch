@@ -80,13 +80,13 @@ export type BookErrorCode =
 
 export type BookSuccess<T> = {
   ok: true;
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   value: T;
 };
 
 export type BookFailure = {
   ok: false;
-  book: StaplePriceBook;
+  book: StaplePriceWatch;
   error: { code: BookErrorCode };
 };
 
@@ -422,15 +422,15 @@ function countsOf(backup: Backup): BackupCounts {
   };
 }
 
-export class StaplePriceBook {
+export class StaplePriceWatch {
   private constructor(
     private readonly state: BookState,
     private readonly clock: Clock,
     private readonly previousBackup: Backup | null,
   ) {}
 
-  static empty(clock: Clock): StaplePriceBook {
-    return new StaplePriceBook(
+  static empty(clock: Clock): StaplePriceWatch {
+    return new StaplePriceWatch(
       {
         shops: SEED_SHOPS.map((name) => ({
           id: crypto.randomUUID(),
@@ -1124,7 +1124,7 @@ export class StaplePriceBook {
     if (!backup) {
       return this.fail("invalid-backup");
     }
-    const restored = new StaplePriceBook(
+    const restored = new StaplePriceWatch(
       {
         shops: backup.shops.map((shop) => ({ ...shop })),
         categories: backup.categories.map((category) => ({ ...category })),
@@ -1147,7 +1147,7 @@ export class StaplePriceBook {
       return this.fail("nothing-to-undo");
     }
     const backup = this.previousBackup;
-    const undone = new StaplePriceBook(
+    const undone = new StaplePriceWatch(
       {
         shops: backup.shops.map((shop) => ({ ...shop })),
         categories: backup.categories.map((category) => ({ ...category })),
@@ -1262,7 +1262,7 @@ export class StaplePriceBook {
   }
 
   private succeed<T>(state: BookState, value: T): BookSuccess<T> {
-    return { ok: true, book: new StaplePriceBook(state, this.clock, this.previousBackup), value };
+    return { ok: true, book: new StaplePriceWatch(state, this.clock, this.previousBackup), value };
   }
 }
 
@@ -1294,6 +1294,6 @@ export function quoteUnitPrice(input: {
   return formatUnitPrice(input.paidPence / canonicalOf(input.quantity, unit), input.unitFamily);
 }
 
-export function createStaplePriceBook(clock: Clock): StaplePriceBook {
-  return StaplePriceBook.empty(clock);
+export function createStaplePriceWatch(clock: Clock): StaplePriceWatch {
+  return StaplePriceWatch.empty(clock);
 }

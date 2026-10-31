@@ -6,7 +6,7 @@
 
 **Status:** done
 
-Read `.scratch/staple-price-book/spec.md` User Stories 59–68 and decisions 49–52 and 57–58. Also `docs/adr/0001-local-first-pwa.md`.
+Read `.scratch/staple-price-watch/spec.md` User Stories 59–68 and decisions 49–52 and 57–58. Also `docs/adr/0001-local-first-pwa.md`.
 
 - [x] Backup JSON includes schema version and every record. Invalid JSON is rejected. Restore replaces the book
 - [x] CSV has one row per completed Observation and no Draft rows

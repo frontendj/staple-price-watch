@@ -6,7 +6,7 @@
 
 **Status:** done
 
-Read `.scratch/staple-price-book/spec.md` User Stories 6–8 and 40–47. The screen sends commands to `StaplePriceBook` and shows the book's errors.
+Read `.scratch/staple-price-watch/spec.md` User Stories 6–8 and 40–47. The screen sends commands to `StaplePriceWatch` and shows the book's errors.
 
 - [x] A new Category asks for a name and a Unit Family and then appears in the picker
 - [x] Rename updates history. Merge is refused across Unit Families. A Category with Observations cannot be deleted

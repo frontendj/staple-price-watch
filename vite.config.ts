@@ -9,7 +9,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["icon-192.png", "icon-512.png"],
       manifest: {
-        name: "Staple Price Book",
+        name: "Staple Price Watch",
         short_name: "Staples",
         description: "Personal staple grocery prices.",
         display: "standalone",
