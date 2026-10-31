@@ -4,12 +4,12 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** in-progress
+**Status:** done
 
 Read `.scratch/staple-price-book/spec.md`, `GLOSSARY.md`, and `docs/adr/0001-local-first-pwa.md`. Implement the `StaplePriceBook` module described under "The seam" and "Commands the book must support". Cover the "Required examples" in Testing Decisions. Use the TDD skill at `/Users/dmitriikuznetsov/.agents/skills/tdd/SKILL.md`. The only test seam is `StaplePriceBook`.
 
-- [ ] Seed Categories and Shops match the spec
-- [ ] Unit Prices for eggs, 568 ml milk, and 350 g at 210 pence match the literal examples
-- [ ] Wrong Unit Family, zero price, and zero quantity are rejected
-- [ ] Drafts, repeated-entry defaults, and the duplicate-Visit warning behave as specified
-- [ ] Merge, archive, Monthly Median, evidence gate, Promotion filter, Backup replace, and CSV match the spec
+- [x] Seed Categories and Shops match the spec
+- [x] Unit Prices for eggs, 568 ml milk, and 350 g at 210 pence match the literal examples
+- [x] Wrong Unit Family, zero price, and zero quantity are rejected
+- [x] Drafts, repeated-entry defaults, and the duplicate-Visit warning behave as specified
+- [x] Merge, archive, Monthly Median, evidence gate, Promotion filter, Backup replace, and CSV match the spec
