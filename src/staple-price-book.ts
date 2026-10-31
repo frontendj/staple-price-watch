@@ -848,8 +848,6 @@ export class StaplePriceBook {
         paidPence: input.paidPence ?? current.paidPence,
         quantity: input.quantity ?? current.enteredQuantity,
         unit: input.unit ?? current.enteredUnit,
-        promotion: input.promotion ?? current.promotion,
-        comment: input.comment === undefined ? current.comment : input.comment,
       },
       current.categoryId,
     );
@@ -1258,6 +1256,29 @@ export class StaplePriceBook {
 function blankToUndefined(comment: string | undefined): string | undefined {
   const trimmed = comment?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+export function unitsFor(family: UnitFamily): EnteredUnit[] {
+  if (family === "mass") {
+    return ["g", "kg"];
+  }
+  if (family === "volume") {
+    return ["ml", "L"];
+  }
+  return ["item"];
+}
+
+export function quoteUnitPrice(input: {
+  unitFamily: UnitFamily;
+  paidPence: number;
+  quantity: number;
+  unit: string;
+}): string | undefined {
+  const unit = enteredUnitFor(input.unitFamily, input.unit);
+  if (!unit || !validPrice(input.paidPence) || !validQuantity(input.quantity)) {
+    return undefined;
+  }
+  return formatUnitPrice(input.paidPence / canonicalOf(input.quantity, unit), input.unitFamily);
 }
 
 export function createStaplePriceBook(clock: Clock): StaplePriceBook {

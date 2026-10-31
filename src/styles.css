@@ -1,0 +1,137 @@
+:root {
+  color: #1c1915;
+  background: #f6f4ef;
+  font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  width: 100%;
+}
+
+button {
+  min-height: 44px;
+  border: 1px solid #1c1915;
+  background: #1c1915;
+  color: #f6f4ef;
+}
+
+button.secondary {
+  background: transparent;
+  color: #1c1915;
+}
+
+button:disabled {
+  opacity: 0.45;
+}
+
+.screen {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 16px 16px 48px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.row > * {
+  flex: 1;
+}
+
+label,
+.field {
+  display: block;
+  margin: 12px 0;
+}
+
+label span,
+.muted {
+  display: block;
+  color: #5c564c;
+  font-size: 0.9rem;
+}
+
+input,
+select,
+textarea {
+  margin-top: 4px;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid #c9c2b6;
+  background: white;
+}
+
+.card,
+li.card {
+  list-style: none;
+  margin: 8px 0;
+  padding: 12px;
+  background: white;
+  border: 1px solid #e4ddd2;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+}
+
+.notice {
+  padding: 12px;
+  background: #fff4d6;
+  border: 1px solid #e0c56a;
+}
+
+.units {
+  display: flex;
+  gap: 8px;
+}
+
+.units button {
+  background: white;
+  color: #1c1915;
+}
+
+.units button[aria-pressed="true"] {
+  background: #1c1915;
+  color: #f6f4ef;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+td,
+th {
+  text-align: left;
+  padding: 6px 4px;
+  border-bottom: 1px solid #e4ddd2;
+}
+
+svg {
+  width: 100%;
+  height: auto;
+  background: white;
+  border: 1px solid #e4ddd2;
+}

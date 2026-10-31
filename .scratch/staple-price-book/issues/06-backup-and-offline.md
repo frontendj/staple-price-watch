@@ -4,11 +4,11 @@
 
 **Blocked by:** 03: Keep the book on this device
 
-**Status:** ready-for-agent
+**Status:** done
 
 Read `.scratch/staple-price-book/spec.md` User Stories 59–68 and decisions 49–52 and 57–58. Also `docs/adr/0001-local-first-pwa.md`.
 
-- [ ] Backup JSON includes schema version and every record. Invalid JSON is rejected. Restore replaces the book
-- [ ] CSV has one row per completed Observation and no Draft rows
-- [ ] File System Access is used when present, with input/download fallback
-- [ ] "Ready offline" appears only after precache. Persistence is requested after the first completed Visit
+- [x] Backup JSON includes schema version and every record. Invalid JSON is rejected. Restore replaces the book
+- [x] CSV has one row per completed Observation and no Draft rows
+- [x] File System Access is used when present, with input/download fallback
+- [x] "Ready offline" appears only after precache. Persistence is requested after the first completed Visit

@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import {
   createStaplePriceBook,
+  quoteUnitPrice,
   type BookResult,
   type StaplePriceBook,
 } from "./staple-price-book";
@@ -541,4 +542,13 @@ test("CSV has one row per completed Observation and skips Drafts", () => {
   expect(rows[1]).toContain(done.value.visitId);
   expect(rows[1]).toContain(added.value.observationId);
   expect(book.toCsv()).not.toContain("Milk");
+});
+
+test("a price quote shows £6.00/kg for 350 g at 210 pence before it is saved", () => {
+  expect(
+    quoteUnitPrice({ unitFamily: "mass", paidPence: 210, quantity: 350, unit: "g" }),
+  ).toBe("£6.00/kg");
+  expect(quoteUnitPrice({ unitFamily: "volume", paidPence: 0, quantity: 1, unit: "L" })).toBe(
+    undefined,
+  );
 });
