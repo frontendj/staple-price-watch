@@ -441,9 +441,12 @@ function ObservationScreen(props: {
     ? props.book.observations().find((item) => item.id === props.observationId)
     : undefined;
   const choices = props.book.categoryChoices();
-  const initialCategory = existing?.categoryId ?? choices[0]?.id ?? "";
-  const preset = props.book.entryDefault(initialCategory);
-  const [categoryId, setCategoryId] = useState(initialCategory);
+  const initialCategory =
+    props.book.categories().find((item) => item.id === existing?.categoryId) ?? choices[0];
+  const preset = initialCategory ? props.book.entryDefault(initialCategory.id) : undefined;
+  const [categoryName, setCategoryName] = useState(initialCategory?.name ?? "");
+  const [newFamily, setNewFamily] = useState<UnitFamily>(initialCategory?.unitFamily ?? "mass");
+  const [categoryOpen, setCategoryOpen] = useState(false);
   const [price, setPrice] = useState(existing ? (existing.paidPence / 100).toFixed(2) : "");
   const [quantity, setQuantity] = useState(
     existing ? String(existing.enteredQuantity) : preset ? String(preset.quantity) : "",
@@ -451,41 +454,80 @@ function ObservationScreen(props: {
   const [unit, setUnit] = useState(existing?.enteredUnit ?? preset?.unit ?? "item");
   const [promotion, setPromotion] = useState(existing?.promotion ?? false);
   const [comment, setComment] = useState(existing?.comment ?? "");
-  const category = props.book.categories().find((item) => item.id === categoryId);
-  const units = category ? unitsFor(category.unitFamily) : [];
+  const trimmedName = categoryName.trim();
+  const matched = props.book.categories().find(
+    (item) =>
+      item.name.toLowerCase() === trimmedName.toLowerCase() &&
+      (!item.archivedAt || item.id === existing?.categoryId),
+  );
+  const creating = trimmedName.length > 0 && !matched;
+  const family = matched?.unitFamily ?? newFamily;
+  const units = unitsFor(family);
   const selectedUnit = units.includes(unit) ? unit : (units[0] ?? "item");
   const paidPence = poundsToPence(price);
   const quote =
-    category && paidPence && Number(quantity) > 0
+    trimmedName && paidPence && Number(quantity) > 0
       ? quoteUnitPrice({
-          unitFamily: category.unitFamily,
+          unitFamily: family,
           paidPence,
           quantity: Number(quantity),
           unit: selectedUnit,
         })
       : undefined;
+  const needle = trimmedName.toLowerCase();
+  const suggestions = choices.filter((item) => needle.length === 0 || item.name.toLowerCase().includes(needle));
 
-  function chooseCategory(nextId: string) {
-    setCategoryId(nextId);
+  function applyKnownCategory(nextId: string, nextFamily: UnitFamily) {
     if (existing) {
       return;
     }
     const nextDefault = props.book.entryDefault(nextId);
-    const nextCategory = props.book.categories().find((item) => item.id === nextId);
-    if (nextDefault && nextCategory && unitsFor(nextCategory.unitFamily).includes(nextDefault.unit)) {
+    if (nextDefault && unitsFor(nextFamily).includes(nextDefault.unit)) {
       setQuantity(String(nextDefault.quantity));
       setUnit(nextDefault.unit);
-    } else if (nextCategory) {
-      setUnit(unitsFor(nextCategory.unitFamily)[0] ?? "item");
+      return;
+    }
+    setUnit(unitsFor(nextFamily)[0] ?? "item");
+  }
+
+  function chooseCategory(next: { id: string; name: string; unitFamily: UnitFamily }) {
+    setCategoryName(next.name);
+    setNewFamily(next.unitFamily);
+    setCategoryOpen(false);
+    applyKnownCategory(next.id, next.unitFamily);
+  }
+
+  function typeCategory(value: string) {
+    const wasKnown = Boolean(matched);
+    setCategoryName(value);
+    setCategoryOpen(true);
+    const next = props.book.categories().find(
+      (item) => item.name.toLowerCase() === value.trim().toLowerCase() && !item.archivedAt,
+    );
+    if (next) {
+      setNewFamily(next.unitFamily);
+      applyKnownCategory(next.id, next.unitFamily);
+      return;
+    }
+    if (wasKnown) {
+      setNewFamily("mass");
+      setUnit("g");
     }
   }
 
   async function save(andAnother: boolean) {
-    if (!category) {
-      return;
+    let book = props.book;
+    let categoryId = matched?.id;
+    if (!categoryId) {
+      const created = await props.commit(book.addCategory({ name: trimmedName, unitFamily: newFamily }));
+      if (!created.ok) {
+        return;
+      }
+      book = created.book;
+      categoryId = created.value.categoryId;
     }
     const input = {
-      categoryId: category.id,
+      categoryId,
       paidPence: paidPence ?? 0,
       quantity: Number(quantity),
       unit: selectedUnit,
@@ -493,8 +535,8 @@ function ObservationScreen(props: {
       comment,
     };
     const result = existing
-      ? await props.commit(props.book.updateObservation({ observationId: existing.id, ...input }))
-      : await props.commit(props.book.addObservation({ visitId: props.visitId, ...input }));
+      ? await props.commit(book.updateObservation({ observationId: existing.id, ...input }))
+      : await props.commit(book.addObservation({ visitId: props.visitId, ...input }));
     if (!result.ok) {
       return;
     }
@@ -502,7 +544,7 @@ function ObservationScreen(props: {
       setPrice("");
       setPromotion(false);
       setComment("");
-      const fresh = result.book.entryDefault(category.id);
+      const fresh = result.book.entryDefault(categoryId);
       if (fresh) {
         setQuantity(String(fresh.quantity));
         setUnit(fresh.unit);
@@ -517,19 +559,39 @@ function ObservationScreen(props: {
       <h1>{existing ? "Edit observation" : "Add observation"}</h1>
       <label>
         <span>Category</span>
-        <select value={categoryId} onChange={(event) => chooseCategory(event.target.value)}>
-          {choices.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-          {existing && !choices.some((item) => item.id === existing.categoryId) ? (
-            <option value={existing.categoryId}>
-              {props.book.categories().find((item) => item.id === existing.categoryId)?.name}
-            </option>
+        <div className="combo">
+          <input
+            value={categoryName}
+            aria-autocomplete="list"
+            aria-expanded={categoryOpen}
+            onChange={(event) => typeCategory(event.target.value)}
+            onFocus={() => setCategoryOpen(true)}
+            onBlur={() => window.setTimeout(() => setCategoryOpen(false), 150)}
+          />
+          {categoryOpen ? (
+            <ul className="combo-list" role="listbox">
+              {suggestions.map((item) => (
+                <li key={item.id}>
+                  <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => chooseCategory(item)}>
+                    {item.name}
+                  </button>
+                </li>
+              ))}
+              {creating ? <li className="muted">Add “{trimmedName}” as a new category</li> : null}
+            </ul>
           ) : null}
-        </select>
+        </div>
       </label>
+      {creating ? (
+        <label>
+          <span>Unit for {trimmedName}</span>
+          <select value={newFamily} onChange={(event) => setNewFamily(event.target.value as UnitFamily)}>
+            <option value="count">per item</option>
+            <option value="volume">per litre</option>
+            <option value="mass">per kilogram</option>
+          </select>
+        </label>
+      ) : null}
       <label>
         <span>Paid price (£)</span>
         <input inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} />

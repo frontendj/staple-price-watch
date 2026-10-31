@@ -135,3 +135,32 @@ svg {
   background: white;
   border: 1px solid #e4ddd2;
 }
+
+.combo {
+  position: relative;
+}
+
+.combo-list {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  background: white;
+  border: 1px solid #c9c2b6;
+}
+
+.combo-list button {
+  text-align: left;
+  background: white;
+  color: #1c1915;
+  border: 0;
+  border-bottom: 1px solid #e4ddd2;
+}
+
+.combo-list .muted {
+  padding: 10px 12px;
+}
