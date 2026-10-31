@@ -4,6 +4,7 @@ import { openTextFile, saveTextFile } from "./files";
 import { localToday, monthLabel, poundsToPence, showDate, showMoney } from "./format";
 import { loadBook, saveBook } from "./store";
 import {
+  canonicalUnit,
   quoteUnitPrice,
   unitsFor,
   type BookErrorCode,
@@ -63,7 +64,7 @@ export function App() {
         return;
       }
       setBook(loaded);
-      if (loaded.exportBackup().settings.persistencePrompted) {
+      if (loaded.persistenceWasPrompted()) {
         void navigator.storage?.persisted?.().then((granted) => {
           setPersistence(granted ? "granted" : "not-granted");
         });
@@ -90,7 +91,7 @@ export function App() {
   }
 
   async function rememberPersistence(next: StaplePriceBook): Promise<void> {
-    if (next.exportBackup().settings.persistencePrompted) {
+    if (next.persistenceWasPrompted()) {
       return;
     }
     const granted = (await navigator.storage?.persist?.()) ?? false;
@@ -209,7 +210,7 @@ function Home(props: {
           <li key={visit.id}>
             <button type="button" className="secondary" onClick={() => props.onOpen({ name: "visit", visitId: visit.id })}>
               {showDate(visit.date)} · {shopName(props.book, visit.shopId)} · {props.book.observations(visit.id).length}{" "}
-              items
+              observations
             </button>
           </li>
         ))}
@@ -220,7 +221,7 @@ function Home(props: {
           <li key={visit.id}>
             <button type="button" className="secondary" onClick={() => props.onOpen({ name: "visit", visitId: visit.id })}>
               {showDate(visit.date)} · {shopName(props.book, visit.shopId)} · {props.book.observations(visit.id).length}{" "}
-              items
+              observations
             </button>
           </li>
         ))}
@@ -349,7 +350,7 @@ function VisitScreen(props: {
         })}
       </ul>
       <button type="button" onClick={props.onAdd}>
-        Add item
+        Add observation
       </button>
       {duplicate ? (
         <div className="notice">
@@ -480,12 +481,12 @@ function ObservationScreen(props: {
   }
 
   async function save(andAnother: boolean) {
-    if (!category || paidPence === undefined) {
+    if (!category) {
       return;
     }
     const input = {
       categoryId: category.id,
-      paidPence,
+      paidPence: paidPence ?? 0,
       quantity: Number(quantity),
       unit: selectedUnit,
       promotion,
@@ -513,7 +514,7 @@ function ObservationScreen(props: {
 
   return (
     <>
-      <h1>{existing ? "Edit item" : "Add item"}</h1>
+      <h1>{existing ? "Edit observation" : "Add observation"}</h1>
       <label>
         <span>Category</span>
         <select value={categoryId} onChange={(event) => chooseCategory(event.target.value)}>
@@ -578,8 +579,8 @@ function ObservationScreen(props: {
           onClick={() => {
             const visit = props.book.visit(props.visitId);
             const last = props.book.observations(props.visitId).length === 1 && visit?.status === "complete";
-            const deleteVisitIfEmpty = last
-              ? window.confirm("This is the last item. Delete the whole visit?")
+              const deleteVisitIfEmpty = last
+              ? window.confirm("This is the last observation. Delete the whole visit?")
               : false;
             if (last && !deleteVisitIfEmpty) {
               return;
@@ -593,7 +594,7 @@ function ObservationScreen(props: {
               });
           }}
         >
-          Delete item
+          Delete observation
         </button>
       ) : null}
       <button type="button" className="secondary" onClick={props.onClose}>
@@ -666,13 +667,13 @@ function StatisticsScreen(props: { book: StaplePriceBook; onHome: () => void; on
           <option value="only">Only promotions</option>
         </select>
       </label>
-      {report && category ? <PriceChart report={report} unitLabel={quoteUnit(category.unitFamily)} /> : null}
+      {report && category ? <PriceChart report={report} unitLabel={canonicalUnit(category.unitFamily)} /> : null}
       {report?.trend.status === "insufficient" ? <p>{report.trend.label}</p> : null}
       {report?.trend.status === "trend" ? (
         <p>
           From {monthLabel(report.trend.firstMonth)} to {monthLabel(report.trend.lastMonth)},{" "}
           {showMoney(report.trend.firstMedianPence)} to {showMoney(report.trend.lastMedianPence)} per{" "}
-          {category ? quoteUnit(category.unitFamily) : "unit"}, {report.trend.percentChange.toFixed(1)}% across{" "}
+          {category ? canonicalUnit(category.unitFamily) : "unit"}, {report.trend.percentChange.toFixed(1)}% across{" "}
           {report.trend.observationCount} observations.
         </p>
       ) : null}
@@ -687,21 +688,18 @@ function StatisticsScreen(props: { book: StaplePriceBook; onHome: () => void; on
           </tr>
         </thead>
         <tbody>
-          {report?.points.map((point) => {
-            const observation = props.book.observations().find((item) => item.id === point.observationId);
-            return (
+          {report?.points.map((point) => (
               <tr key={point.observationId} onClick={() => props.onOpen({ name: "visit", visitId: point.visitId })}>
                 <td>{showDate(point.date)}</td>
                 <td>{shopName(props.book, point.shopId)}</td>
                 <td>
-                  {observation ? `${observation.enteredQuantity} ${observation.enteredUnit}` : ""}
+                  {point.enteredQuantity} {point.enteredUnit}
                   {point.promotion ? " promo" : ""}
                 </td>
-                <td>{observation ? showMoney(observation.paidPence) : ""}</td>
+                <td>{showMoney(point.paidPence)}</td>
                 <td>{props.book.displayUnitPrice(point.observationId)}</td>
               </tr>
-            );
-          })}
+            ))}
         </tbody>
       </table>
       <button type="button" className="secondary" onClick={props.onHome}>
@@ -727,18 +725,25 @@ function PriceChart(props: {
   const span = max - min || 1;
   const width = 320;
   const height = 180;
-  const xOf = (index: number, count: number) => (count <= 1 ? width / 2 : 24 + (index * (width - 48)) / (count - 1));
+  const days = props.report.points.map((point) => Date.parse(`${point.date}T00:00:00Z`));
+  const firstDay = Math.min(...days);
+  const lastDay = Math.max(...days);
+  const daySpan = lastDay - firstDay || 1;
+  const xOfDate = (date: string) => 24 + ((Date.parse(`${date}T00:00:00Z`) - firstDay) / daySpan) * (width - 48);
   const yOf = (price: number) => 16 + ((max - price) / span) * (height - 36);
   return (
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Unit price chart">
-      {props.report.points.map((point, index) => (
-        <circle key={point.observationId} cx={xOf(index, props.report.points.length)} cy={yOf(point.unitPricePence)} r="4" fill="#1c1915" />
+      {props.report.points.map((point) => (
+        <circle key={point.observationId} cx={xOfDate(point.date)} cy={yOf(point.unitPricePence)} r="4" fill="#1c1915" />
       ))}
       {props.report.months.map((month) => {
         const inMonth = props.report.points.filter((point) => point.date.startsWith(month.month));
-        const first = props.report.points.indexOf(inMonth[0]!);
-        const last = props.report.points.indexOf(inMonth[inMonth.length - 1]!);
-        const x = (xOf(first, props.report.points.length) + xOf(last, props.report.points.length)) / 2;
+        const first = inMonth[0];
+        const last = inMonth[inMonth.length - 1];
+        if (!first || !last) {
+          return null;
+        }
+        const x = (xOfDate(first.date) + xOfDate(last.date)) / 2;
         const y = yOf(month.medianPence);
         return (
           <g key={month.month}>
@@ -930,7 +935,6 @@ function BackupScreen(props: {
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
   onHome: () => void;
 }) {
-  const [undoable, setUndoable] = useState(false);
   return (
     <>
       <h1>Backup</h1>
@@ -974,33 +978,19 @@ function BackupScreen(props: {
               return;
             }
             const confirmed = window.confirm(
-              `Replace this book with ${preview.counts.visits} visits and ${preview.counts.observations} observations?`,
+              `Replace this book with ${preview.counts.shops} shops, ${preview.counts.categories} categories, ${preview.counts.visits} visits, and ${preview.counts.observations} observations?`,
             );
             if (!confirmed) {
               return;
             }
-            void props.commit(props.book.restoreBackup(text)).then((result) => {
-              if (result.ok) {
-                setUndoable(true);
-              }
-            });
+            void props.commit(props.book.restoreBackup(text));
           });
         }}
       >
         Restore JSON backup
       </button>
-      {undoable ? (
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => {
-            void props.commit(props.book.undoRestore()).then((result) => {
-              if (result.ok) {
-                setUndoable(false);
-              }
-            });
-          }}
-        >
+      {props.book.canUndoRestore() ? (
+        <button type="button" className="secondary" onClick={() => void props.commit(props.book.undoRestore())}>
           Undo restore
         </button>
       ) : null}
@@ -1015,12 +1005,3 @@ function shopName(book: StaplePriceBook, shopId: string): string {
   return book.shops().find((shop) => shop.id === shopId)?.name ?? "Shop";
 }
 
-function quoteUnit(family: UnitFamily): string {
-  if (family === "mass") {
-    return "kg";
-  }
-  if (family === "volume") {
-    return "L";
-  }
-  return "item";
-}

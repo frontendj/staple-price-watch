@@ -12,11 +12,21 @@ export function showMoney(pence: number): string {
 
 export function poundsToPence(text: string): number | undefined {
   const trimmed = text.trim();
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
     return undefined;
   }
   const [whole, fraction = ""] = trimmed.split(".");
-  return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  const digits = fraction.padEnd(3, "0");
+  let pennies = Number(digits.slice(0, 2));
+  if (Number(digits[2] ?? "0") >= 5) {
+    pennies += 1;
+  }
+  let pounds = Number(whole);
+  if (pennies >= 100) {
+    pounds += Math.floor(pennies / 100);
+    pennies %= 100;
+  }
+  return pounds * 100 + pennies;
 }
 
 export function localToday(): string {

@@ -119,6 +119,9 @@ export type StatisticsPoint = {
   visitId: string;
   date: string;
   shopId: string;
+  paidPence: number;
+  enteredQuantity: number;
+  enteredUnit: EnteredUnit;
   unitPricePence: number;
   promotion: boolean;
 };
@@ -227,7 +230,7 @@ const settingsSchema = z.object({
   ),
   lastShopId: z.string().optional(),
   persistencePrompted: z.boolean(),
-  revision: z.number().int().nonnegative(),
+  revision: z.number().int().nonnegative().optional().default(0),
 });
 
 const backupSchema = z.object({
@@ -311,17 +314,7 @@ function roundHalfUp(value: number, decimals: number): number {
   return (Math.sign(shifted) * Math.floor(Math.abs(shifted) + 0.5)) / factor;
 }
 
-function formatUnitPrice(unitPricePence: number, family: UnitFamily): string {
-  const displayPence = roundHalfUp(unitPricePence, 0);
-  const negative = displayPence < 0;
-  const absolute = Math.abs(displayPence);
-  const pounds = Math.trunc(absolute / 100);
-  const pennies = absolute % 100;
-  const canonical = family === "mass" ? "kg" : family === "volume" ? "L" : "item";
-  return `${negative ? "-" : ""}£${pounds}.${String(pennies).padStart(2, "0")}/${canonical}`;
-}
-
-function canonicalUnit(family: UnitFamily): string {
+export function canonicalUnit(family: UnitFamily): string {
   if (family === "mass") {
     return "kg";
   }
@@ -329,6 +322,15 @@ function canonicalUnit(family: UnitFamily): string {
     return "L";
   }
   return "item";
+}
+
+function formatUnitPrice(unitPricePence: number, family: UnitFamily): string {
+  const displayPence = roundHalfUp(unitPricePence, 0);
+  const negative = displayPence < 0;
+  const absolute = Math.abs(displayPence);
+  const pounds = Math.trunc(absolute / 100);
+  const pennies = absolute % 100;
+  return `${negative ? "-" : ""}£${pounds}.${String(pennies).padStart(2, "0")}/${canonicalUnit(family)}`;
 }
 
 function csvCell(value: string): string {
@@ -523,6 +525,14 @@ export class StaplePriceBook {
 
   today(): string {
     return this.clock.today();
+  }
+
+  persistenceWasPrompted(): boolean {
+    return this.state.settings.persistencePrompted;
+  }
+
+  canUndoRestore(): boolean {
+    return this.previousBackup !== null;
   }
 
   displayUnitPrice(observationId: string): string | undefined {
@@ -1046,6 +1056,9 @@ export class StaplePriceBook {
           visitId: visit.id,
           date: visit.date,
           shopId: visit.shopId,
+          paidPence: observation.paidPence,
+          enteredQuantity: observation.enteredQuantity,
+          enteredUnit: observation.enteredUnit,
           unitPricePence: observation.unitPricePence,
           promotion: observation.promotion,
         },
@@ -1249,7 +1262,7 @@ export class StaplePriceBook {
   }
 
   private succeed<T>(state: BookState, value: T): BookSuccess<T> {
-    return { ok: true, book: new StaplePriceBook(state, this.clock, null), value };
+    return { ok: true, book: new StaplePriceBook(state, this.clock, this.previousBackup), value };
   }
 }
 

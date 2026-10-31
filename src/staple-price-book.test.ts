@@ -493,7 +493,12 @@ test("Backup replace restores the previous book and invalid JSON is rejected", (
   const restored = accept(book.restoreBackup(backup));
   expect(restored.book.observations()).toEqual([]);
   expect(restored.value).toMatchObject({ shops: 12, categories: 5, visits: 0, observations: 0 });
-  expect(accept(restored.book.undoRestore()).book.observations()).toHaveLength(1);
+  const afterRestore = accept(restored.book.startVisit({ date: "2026-11-01", shopId: tesco.id }));
+  expect(accept(afterRestore.book.undoRestore()).book.observations()).toHaveLength(1);
+
+  const withoutRevision = { ...backup, settings: { ...backup.settings } };
+  delete (withoutRevision.settings as { revision?: number }).revision;
+  expect(accept(book.restoreBackup(withoutRevision)).book.categories()).toHaveLength(5);
 });
 
 test("CSV has one row per completed Observation and skips Drafts", () => {
