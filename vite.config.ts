@@ -2,7 +2,18 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+// GitHub Actions sets GITHUB_REPOSITORY. Project Pages are served from /<repo>/.
+// A user or organisation site (*.github.io) stays at /. Local builds stay at /.
+function siteBase(): string {
+  const repository = process.env.GITHUB_REPOSITORY?.split("/")[1];
+  if (!repository || repository.endsWith(".github.io")) {
+    return "/";
+  }
+  return `/${repository}/`;
+}
+
 export default defineConfig({
+  base: siteBase(),
   plugins: [
     react(),
     VitePWA({
@@ -13,7 +24,6 @@ export default defineConfig({
         short_name: "Staples",
         description: "Personal staple grocery prices.",
         display: "standalone",
-        start_url: "/",
         background_color: "#f6f4ef",
         theme_color: "#1c1915",
         icons: [
