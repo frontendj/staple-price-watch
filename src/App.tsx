@@ -4,12 +4,11 @@ import { openTextFile, saveTextFile } from "./files";
 import { matchCategoryName } from "./read-shelf-tag";
 import { recogniseTag } from "./recognise-tag";
 import { localToday, monthLabel, poundsToPence, showDate, showMoney } from "./format";
-import { loadBook, saveBook } from "./store";
+import { commitLoadedBook, loadBook, saveBook } from "./loaded-book";
 import {
   canonicalUnit,
   quoteUnitPrice,
   unitsFor,
-  type BookErrorCode,
   type BookResult,
   type StaplePriceWatch,
   type UnitFamily,
@@ -27,30 +26,6 @@ type Screen =
   | { name: "backup" };
 
 const clock = { today: localToday };
-
-const errors: Record<BookErrorCode, string> = {
-  "unknown-shop": "Choose a shop.",
-  "unknown-visit": "That visit is no longer in the book.",
-  "unknown-category": "Choose a category.",
-  "unknown-observation": "That observation is no longer in the book.",
-  "wrong-unit-family": "That unit does not match this category.",
-  "invalid-price": "Enter a price of at least £0.01.",
-  "invalid-quantity": "Enter a quantity greater than zero.",
-  "invalid-name": "Enter a name.",
-  "duplicate-shop": "That shop is already in the list.",
-  "archived-category": "That category is archived.",
-  "archived-shop": "That shop is archived.",
-  "incomplete-visit": "Add a date, a shop, and at least one item before completing.",
-  "duplicate-observation": "That price is already recorded.",
-  "promotion-not-lower": "The promotion price has to be lower than the pack price.",
-  "not-draft": "Only a draft can be discarded.",
-  "not-complete": "Only a completed visit can be deleted this way.",
-  "empty-visit": "Deleting this item would leave the visit empty.",
-  "category-in-use": "Move or delete its observations before archiving this category.",
-  "incompatible-merge": "Merge only two active categories that share a unit.",
-  "invalid-backup": "That file is not a Staple Price Watch backup.",
-  "nothing-to-undo": "There is no restore to undo.",
-};
 
 export function App() {
   const [book, setBook] = useState<StaplePriceWatch | null>(null);
@@ -81,22 +56,15 @@ export function App() {
   }, []);
 
   async function commit<T>(result: BookResult<T>): Promise<BookResult<T>> {
+    const settled = commitLoadedBook(result);
     if (!result.ok) {
-      const existing = result.error.observationId
-        ? result.book.observations().find((item) => item.id === result.error.observationId)
-        : undefined;
-      const visit = existing ? result.book.visit(existing.visitId) : undefined;
-      setNotice(
-        existing && visit
-          ? `${errors[result.error.code]} ${shopName(result.book, visit.shopId)} ${showDate(visit.date)}, ${showMoney(existing.paidPence)} for ${existing.enteredQuantity} ${existing.enteredUnit}.`
-          : errors[result.error.code],
-      );
+      setNotice(settled.sentence);
       return result;
     }
     setNotice("");
-    setBook(result.book);
+    setBook(settled.book);
     try {
-      await saveBook(result.book);
+      await saveBook(settled.book);
     } catch {
       setNotice("The change is on screen, but it could not be saved on this device.");
     }
