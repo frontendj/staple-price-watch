@@ -28,6 +28,10 @@ _Avoid_: trip, cart, receipt, transaction, basket
 A Visit that has not been completed. It is saved automatically and can be resumed or discarded.
 _Avoid_: temporary scan, unsaved form, session
 
+**Tag**:
+The printed shelf label the Shopper photographs. It is not a Comment, and it is not an Observation until the Shopper saves the confirm fields.
+_Avoid_: scan, receipt, product
+
 **Observation**:
 One recorded price of one Category during one Visit: pack price, quantity, unit, optional Promotion price, optional Comment. It does not record whether the Shopper bought it.
 _Avoid_: line item, purchase, price update, product, entry
