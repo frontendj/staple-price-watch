@@ -341,6 +341,7 @@ function CameraScreen(props: {
     shotRef.current += 1;
     setReading(false);
     setPhase("shoot");
+    setDraftId("");
     setCategoryId("");
     setPrice("");
     setPromotion("");
