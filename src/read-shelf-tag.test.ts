@@ -9,10 +9,12 @@ test("Cabbage 300g 12.5 £ with no Cabbage Category yields the name Cabbage, qua
     book.categoryChoices().map((category) => category.name),
   );
 
-  expect(fields.name).toBe("Cabbage");
-  expect(fields.quantity).toBe(300);
-  expect(fields.unit).toBe("g");
-  expect(fields.paidPence).toBe(1250);
+  expect(fields).toEqual({
+    name: "Cabbage",
+    paidPence: 1250,
+    quantity: 300,
+    unit: "g",
+  });
   expect(book.observations()).toEqual([]);
   expect(book.categories().some((category) => category.name === "Cabbage")).toBe(false);
 });
@@ -68,9 +70,5 @@ test("2 for £3 together with £1.80 each yields no prices", () => {
 test("a missed read leaves the confirm fields blank", () => {
   const fields = readShelfTag("", ["Milk", "Eggs", "Cherry tomatoes"]);
 
-  expect(fields.name).toBeUndefined();
-  expect(fields.paidPence).toBeUndefined();
-  expect(fields.promotionPricePence).toBeUndefined();
-  expect(fields.quantity).toBeUndefined();
-  expect(fields.unit).toBeUndefined();
+  expect(fields).toEqual({});
 });

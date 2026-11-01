@@ -1,4 +1,17 @@
-import type { BookResult, StaplePriceWatch, UnitFamily } from "./staple-price-watch";
+import type { BookResult, Category, StaplePriceWatch, UnitFamily } from "./staple-price-watch";
+
+export function categoryNamed(
+  categories: readonly Category[],
+  name: string,
+  currentCategoryId?: string,
+): Category | undefined {
+  const trimmed = name.trim().toLowerCase();
+  return categories.find(
+    (category) =>
+      category.name.toLowerCase() === trimmed &&
+      (!category.archivedAt || category.id === currentCategoryId),
+  );
+}
 
 export function saveObservation(
   book: StaplePriceWatch,
@@ -15,16 +28,12 @@ export function saveObservation(
     promotionPricePence?: number | null;
     comment?: string;
   },
-): BookResult<{ visitId: string; observationId: string }> {
+): BookResult<{ visitId: string; observationId: string; categoryId: string }> {
   const name = input.name.trim();
-  const currentCategoryId = input.observationId
-    ? book.observations().find((item) => item.id === input.observationId)?.categoryId
+  const editing = input.observationId
+    ? book.observations().find((item) => item.id === input.observationId)
     : undefined;
-  const matched = book.categories().find(
-    (category) =>
-      category.name.toLowerCase() === name.toLowerCase() &&
-      (!category.archivedAt || category.id === currentCategoryId),
-  );
+  const matched = categoryNamed(book.categories(), name, editing?.categoryId);
   let next = book;
   let categoryId = matched?.id;
   if (!categoryId) {
@@ -48,16 +57,17 @@ export function saveObservation(
     if (!updated.ok) {
       return { ok: false, book, error: updated.error };
     }
-    const visitId = updated.book
-      .observations()
-      .find((item) => item.id === updated.value.observationId)?.visitId;
-    if (!visitId) {
-      return { ok: false, book, error: { code: "unknown-observation" } };
+    if (!editing) {
+      throw new Error("Observation missing after update");
     }
     return {
       ok: true,
       book: updated.book,
-      value: { visitId, observationId: updated.value.observationId },
+      value: {
+        visitId: editing.visitId,
+        observationId: updated.value.observationId,
+        categoryId,
+      },
     };
   }
   const saved = next.confirmTag({
@@ -74,5 +84,13 @@ export function saveObservation(
   if (!saved.ok) {
     return { ok: false, book, error: saved.error };
   }
-  return saved;
+  return {
+    ok: true,
+    book: saved.book,
+    value: {
+      visitId: saved.value.visitId,
+      observationId: saved.value.observationId,
+      categoryId,
+    },
+  };
 }

@@ -33,6 +33,7 @@ test("saving a new name creates the Category and one Observation", () => {
   );
 
   const cabbage = saved.book.categories().filter((category) => category.name === "Cabbage");
+  expect(saved.value.categoryId).toBe(cabbage[0]?.id);
   expect(cabbage.map((category) => ({ name: category.name, unitFamily: category.unitFamily }))).toEqual([
     { name: "Cabbage", unitFamily: "mass" },
   ]);
@@ -89,6 +90,7 @@ test("the first save on a new Visit creates the Draft and the Observation togeth
     }),
   ]);
   expect(saved.book.categories().filter((category) => category.name === "Milk")).toHaveLength(1);
+  expect(saved.value.categoryId).toBe(milk.id);
 });
 
 test("a second save of the same Shop, date, Category, pack size, pack price, and Promotion price is refused and leaves the book unchanged", () => {
@@ -162,6 +164,8 @@ test("an edit that changes only the Comment is kept", () => {
 
   expect(edited.book.observations()).toHaveLength(1);
   expect(edited.value.observationId).toBe(saved.value.observationId);
+  expect(edited.value.visitId).toBe(saved.value.visitId);
+  expect(edited.value.categoryId).toBe(saved.book.categories().find((category) => category.name === "Milk")?.id);
   expect(edited.book.observations()[0]).toEqual(
     expect.objectContaining({
       id: saved.value.observationId,
@@ -260,6 +264,8 @@ test("an edit to a new name creates the Category and keeps the same Observation"
 
   const cabbage = edited.book.categories().find((category) => category.name === "Cabbage");
   expect(edited.value.observationId).toBe(saved.value.observationId);
+  expect(edited.value.visitId).toBe(saved.value.visitId);
+  expect(edited.value.categoryId).toBe(cabbage?.id);
   expect(edited.book.observations()).toEqual([
     expect.objectContaining({
       id: saved.value.observationId,

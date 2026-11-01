@@ -3,11 +3,12 @@ import { useRegisterSW } from "virtual:pwa-register/react";
 import { openTextFile, saveTextFile } from "./files";
 import { readShelfTag } from "./read-shelf-tag";
 import { recogniseTag } from "./recognise-tag";
-import { saveObservation } from "./save-observation";
-import { localToday, monthLabel, poundsToPence, showDate, showMoney } from "./format";
+import { categoryNamed, saveObservation } from "./save-observation";
+import { localToday, monthLabel, showDate, showMoney } from "./format";
 import { commitLoadedBook, loadBook, saveBook } from "./loaded-book";
 import {
   canonicalUnit,
+  poundsToPence,
   quoteUnitPrice,
   unitsFor,
   type BookResult,
@@ -212,9 +213,7 @@ function CameraScreen(props: {
   const chosenDraft = draftId ? props.book.visit(draftId) : undefined;
   const joining = current ?? chosenDraft;
   const trimmedName = categoryName.trim();
-  const matched = props.book.categories().find(
-    (item) => item.name.toLowerCase() === trimmedName.toLowerCase() && !item.archivedAt,
-  );
+  const matched = categoryNamed(props.book.categories(), trimmedName);
   const creating = trimmedName.length > 0 && !matched;
   const family = matched?.unitFamily ?? (trimmedName ? newFamily : undefined);
   const units = family ? unitsFor(family) : [];
@@ -284,7 +283,7 @@ function CameraScreen(props: {
       return;
     }
     const read = readShelfTag(
-      recognised.text ?? "",
+      recognised,
       props.book.categoryChoices().map((item) => item.name),
     );
     const found = read.name
@@ -345,9 +344,7 @@ function CameraScreen(props: {
     const wasKnown = Boolean(matched);
     setCategoryName(value);
     setCategoryOpen(true);
-    const next = props.book.categories().find(
-      (item) => item.name.toLowerCase() === value.trim().toLowerCase() && !item.archivedAt,
-    );
+    const next = categoryNamed(props.book.categories(), value);
     if (next) {
       setNewFamily(next.unitFamily);
       keepPackOrDefault(next.id, next.unitFamily);
@@ -931,11 +928,7 @@ function ObservationScreen(props: {
   );
   const [comment, setComment] = useState(existing?.comment ?? "");
   const trimmedName = categoryName.trim();
-  const matched = props.book.categories().find(
-    (item) =>
-      item.name.toLowerCase() === trimmedName.toLowerCase() &&
-      (!item.archivedAt || item.id === existing?.categoryId),
-  );
+  const matched = categoryNamed(props.book.categories(), trimmedName, existing?.categoryId);
   const creating = trimmedName.length > 0 && !matched;
   const family = matched?.unitFamily ?? newFamily;
   const units = unitsFor(family);
@@ -979,9 +972,7 @@ function ObservationScreen(props: {
     const wasKnown = Boolean(matched);
     setCategoryName(value);
     setCategoryOpen(true);
-    const next = props.book.categories().find(
-      (item) => item.name.toLowerCase() === value.trim().toLowerCase() && !item.archivedAt,
-    );
+    const next = categoryNamed(props.book.categories(), value);
     if (next) {
       setNewFamily(next.unitFamily);
       applyKnownCategory(next.id, next.unitFamily);
@@ -1017,9 +1008,7 @@ function ObservationScreen(props: {
       setPrice("");
       setPromotion("");
       setComment("");
-      const categoryId = result.book.observations().find((item) => item.id === result.value.observationId)
-        ?.categoryId;
-      const fresh = categoryId ? result.book.entryDefault(categoryId) : undefined;
+      const fresh = result.book.entryDefault(result.value.categoryId);
       if (fresh) {
         setQuantity(String(fresh.quantity));
         setUnit(fresh.unit);

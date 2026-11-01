@@ -6,8 +6,6 @@ export type TagRead = {
   promotionPricePence?: number;
   quantity?: number;
   unit?: EnteredUnit;
-  text?: string;
-  label?: string;
 };
 
 function pence(pounds: string, fraction: string | undefined): number {
@@ -87,12 +85,11 @@ export function matchCategoryName(text: string, names: readonly string[]): strin
 function finish(read: TagRead, source: string, categoryNames: readonly string[]): TagRead {
   const label = productLabel(source);
   const matched = matchCategoryName(source, categoryNames);
-  return {
-    ...read,
-    name: matched ?? (label || undefined),
-    text: source || undefined,
-    label: label || undefined,
-  };
+  const name = matched ?? (label || undefined);
+  if (name === undefined) {
+    return read;
+  }
+  return { ...read, name };
 }
 
 export function readShelfTag(text: string, categoryNames: readonly string[] = []): TagRead {

@@ -10,8 +10,6 @@ export function showMoney(pence: number): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
 }
 
-export { poundsToPence } from "./staple-price-watch";
-
 export function localToday(): string {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
