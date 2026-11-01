@@ -1,6 +1,7 @@
 import { poundsToPence, type EnteredUnit } from "./staple-price-watch";
 
 export type TagRead = {
+  name?: string;
   paidPence?: number;
   promotionPricePence?: number;
   quantity?: number;
@@ -83,16 +84,18 @@ export function matchCategoryName(text: string, names: readonly string[]): strin
   return hits[0];
 }
 
-function finish(read: TagRead, source: string): TagRead {
+function finish(read: TagRead, source: string, categoryNames: readonly string[]): TagRead {
   const label = productLabel(source);
+  const matched = matchCategoryName(source, categoryNames);
   return {
     ...read,
+    name: matched ?? (label || undefined),
     text: source || undefined,
     label: label || undefined,
   };
 }
 
-export function readShelfTag(text: string): TagRead {
+export function readShelfTag(text: string, categoryNames: readonly string[] = []): TagRead {
   const source = text.replace(/\s+/g, " ").trim();
   const prices = packPrices(source);
   const multibuy = source.match(/(\d+)\s*for\s*£\s*(\d+)(?:[.,](\d{1,2}))?/i);
@@ -101,7 +104,7 @@ export function readShelfTag(text: string): TagRead {
   const perKilogram = source.match(new RegExp(`£\\s*${amount}\\s*(?:\\/|per)\\s*kg\\b`, "i"));
   const competing = Boolean(multibuy && each) || sizes.length >= 2;
   if (competing) {
-    return finish({}, source);
+    return finish({}, source, categoryNames);
   }
 
   let quantity: number | undefined;
@@ -123,16 +126,21 @@ export function readShelfTag(text: string): TagRead {
         unit: "kg",
       },
       source,
+      categoryNames,
     );
   }
 
   if (prices.length === 0) {
-    return finish({ quantity, unit }, source);
+    return finish({ quantity, unit }, source, categoryNames);
   }
   const high = Math.max(...prices);
   const low = Math.min(...prices);
   if (prices.length >= 2 && low < high) {
-    return finish({ paidPence: high, promotionPricePence: low, quantity, unit }, source);
+    return finish(
+      { paidPence: high, promotionPricePence: low, quantity, unit },
+      source,
+      categoryNames,
+    );
   }
-  return finish({ paidPence: high, quantity, unit }, source);
+  return finish({ paidPence: high, quantity, unit }, source, categoryNames);
 }

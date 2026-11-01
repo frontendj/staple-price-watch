@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { openTextFile, saveTextFile } from "./files";
-import { matchCategoryName } from "./read-shelf-tag";
+import { readShelfTag } from "./read-shelf-tag";
 import { recogniseTag } from "./recognise-tag";
 import { localToday, monthLabel, poundsToPence, showDate, showMoney } from "./format";
 import { loadBook, saveBook } from "./store";
@@ -310,22 +310,22 @@ function CameraScreen(props: {
     shotRef.current = shot;
     setReading(true);
     setPhase("confirm");
-    const read = await recogniseTag(blob);
+    const recognised = await recogniseTag(blob);
     if (shot !== shotRef.current) {
       return;
     }
-    const foundName = matchCategoryName(
-      read.text ?? "",
+    const read = readShelfTag(
+      recognised.text ?? "",
       props.book.categoryChoices().map((item) => item.name),
     );
-    const found = foundName
-      ? props.book.categoryChoices().find((item) => item.name === foundName)
+    const found = read.name
+      ? props.book.categoryChoices().find((item) => item.name === read.name)
       : undefined;
     const nextFamily = found?.unitFamily ?? familyForUnit(read.unit);
     const readQuantity = read.quantity ? String(read.quantity) : "";
     const readUnit = read.unit ?? "";
     const familyUnits = unitsFor(nextFamily);
-    setCategoryName(found?.name ?? read.label ?? "");
+    setCategoryName(read.name ?? "");
     setNewFamily(nextFamily);
     setCategoryOpen(false);
     setPrice(read.paidPence ? (read.paidPence / 100).toFixed(2) : "");
