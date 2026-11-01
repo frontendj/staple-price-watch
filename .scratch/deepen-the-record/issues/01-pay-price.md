@@ -4,11 +4,15 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] £12.50 and £12.5 are 1250 pence, typed or read
-- [ ] £12.505 is 1251 pence and £12.504 is 1250 pence, typed or read
-- [ ] Milk at 115 pence for 568 ml quotes and stores the same Unit Price
-- [ ] Promotion 99 pence on that pack stores Unit Price 99 / 0.568 and keeps the pack price at 115
-- [ ] An equal Promotion of 115 pence still quotes £2.02/L, and saving the line unchanged keeps 115
-- [ ] Setting the Promotion equal to the pack price on purpose is refused
+- [x] £12.50 and £12.5 are 1250 pence, typed or read
+- [x] £12.505 is 1251 pence and £12.504 is 1250 pence, typed or read
+- [x] Milk at 115 pence for 568 ml quotes and stores the same Unit Price
+- [x] Promotion 99 pence on that pack stores Unit Price 99 / 0.568 and keeps the pack price at 115
+- [x] An equal Promotion of 115 pence still quotes £2.02/L, and saving the line unchanged keeps 115
+- [x] Setting the Promotion equal to the pack price on purpose is refused
+
+## Comments
+
+Resolved on `deepen-the-record`. One pounds-to-pence rule covers a typed amount and a Tag, and the quoted Unit Price is the one stored.
