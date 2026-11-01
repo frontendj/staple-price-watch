@@ -112,6 +112,7 @@ export function App() {
   }
 
   return (
+    <>
     <main className="screen">
       {notice ? <p className="notice">{notice}</p> : null}
       {screen.name === "home" ? (
@@ -157,23 +158,111 @@ export function App() {
         />
       ) : null}
       {screen.name === "statistics" ? (
-        <StatisticsScreen book={book} onHome={() => setScreen({ name: "home" })} onOpen={setScreen} />
+        <StatisticsScreen book={book} onOpen={setScreen} />
       ) : null}
       {screen.name === "categories" ? (
-        <CategoriesScreen book={book} commit={commit} onHome={() => setScreen({ name: "home" })} />
+        <CategoriesScreen book={book} commit={commit} />
       ) : null}
       {screen.name === "shops" ? (
-        <ShopsScreen book={book} commit={commit} onHome={() => setScreen({ name: "home" })} />
+        <ShopsScreen book={book} commit={commit} />
       ) : null}
       {screen.name === "backup" ? (
-        <BackupScreen
-          book={book}
-          persistence={persistence}
-          commit={commit}
-          onHome={() => setScreen({ name: "home" })}
-        />
+        <BackupScreen book={book} persistence={persistence} commit={commit} />
       ) : null}
     </main>
+    <TabBar screen={screen} onOpen={setScreen} />
+    </>
+  );
+}
+
+const tabs = [
+  { name: "home", label: "Home" },
+  { name: "statistics", label: "Statistics" },
+  { name: "categories", label: "Categories" },
+  { name: "shops", label: "Shops" },
+  { name: "backup", label: "Backup" },
+] as const;
+
+function tabFor(screen: Screen): (typeof tabs)[number]["name"] {
+  if (
+    screen.name === "statistics" ||
+    screen.name === "categories" ||
+    screen.name === "shops" ||
+    screen.name === "backup"
+  ) {
+    return screen.name;
+  }
+  return "home";
+}
+
+function TabBar(props: { screen: Screen; onOpen: (screen: Screen) => void }) {
+  const current = tabFor(props.screen);
+  return (
+    <nav className="tabbar" aria-label="Sections">
+      {tabs.map((tab) => (
+        <button
+          key={tab.name}
+          type="button"
+          aria-current={current === tab.name ? "page" : undefined}
+          onClick={() => props.onOpen({ name: tab.name })}
+        >
+          <TabIcon name={tab.name} />
+          {tab.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function TabIcon(props: { name: (typeof tabs)[number]["name"] }) {
+  const common = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  if (props.name === "home") {
+    return (
+      <svg {...common}>
+        <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" />
+      </svg>
+    );
+  }
+  if (props.name === "statistics") {
+    return (
+      <svg {...common}>
+        <path d="M4 19h16" />
+        <path d="M7 16v-4" />
+        <path d="M12 16V8" />
+        <path d="M17 16v-7" />
+      </svg>
+    );
+  }
+  if (props.name === "categories") {
+    return (
+      <svg {...common}>
+        <path d="M4 7h7l2 2h7v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+      </svg>
+    );
+  }
+  if (props.name === "shops") {
+    return (
+      <svg {...common}>
+        <path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+        <path d="M3 10 6 5h12l3 5" />
+        <path d="M9 20v-5h6v5" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <path d="M12 4v10" />
+      <path d="m8 10 4 4 4-4" />
+      <path d="M5 20h14" />
+    </svg>
   );
 }
 
@@ -226,22 +315,6 @@ function Home(props: {
           </li>
         ))}
       </ul>
-      <div className="row">
-        <button type="button" className="secondary" onClick={() => props.onOpen({ name: "statistics" })}>
-          Statistics
-        </button>
-        <button type="button" className="secondary" onClick={() => props.onOpen({ name: "categories" })}>
-          Categories
-        </button>
-      </div>
-      <div className="row">
-        <button type="button" className="secondary" onClick={() => props.onOpen({ name: "shops" })}>
-          Shops
-        </button>
-        <button type="button" className="secondary" onClick={() => props.onOpen({ name: "backup" })}>
-          Backup
-        </button>
-      </div>
     </>
   );
 }
@@ -423,9 +496,6 @@ function VisitScreen(props: {
           Delete visit
         </button>
       )}
-      <button type="button" className="secondary" onClick={props.onHome}>
-        Home
-      </button>
     </>
   );
 }
@@ -666,7 +736,7 @@ function ObservationScreen(props: {
   );
 }
 
-function StatisticsScreen(props: { book: StaplePriceWatch; onHome: () => void; onOpen: (screen: Screen) => void }) {
+function StatisticsScreen(props: { book: StaplePriceWatch; onOpen: (screen: Screen) => void }) {
   const categories = props.book.categories();
   const [categoryId, setCategoryId] = useState(props.book.categoryChoices()[0]?.id ?? categories[0]?.id ?? "");
   const [shopId, setShopId] = useState("");
@@ -764,9 +834,6 @@ function StatisticsScreen(props: { book: StaplePriceWatch; onHome: () => void; o
             ))}
         </tbody>
       </table>
-      <button type="button" className="secondary" onClick={props.onHome}>
-        Home
-      </button>
     </>
   );
 }
@@ -823,7 +890,6 @@ function PriceChart(props: {
 function CategoriesScreen(props: {
   book: StaplePriceWatch;
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
-  onHome: () => void;
 }) {
   const [name, setName] = useState("");
   const [unitFamily, setUnitFamily] = useState<UnitFamily>("mass");
@@ -923,9 +989,6 @@ function CategoriesScreen(props: {
       >
         Merge
       </button>
-      <button type="button" className="secondary" onClick={props.onHome}>
-        Home
-      </button>
     </>
   );
 }
@@ -933,7 +996,6 @@ function CategoriesScreen(props: {
 function ShopsScreen(props: {
   book: StaplePriceWatch;
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
-  onHome: () => void;
 }) {
   const [name, setName] = useState("");
   return (
@@ -984,9 +1046,6 @@ function ShopsScreen(props: {
       >
         Add shop
       </button>
-      <button type="button" className="secondary" onClick={props.onHome}>
-        Home
-      </button>
     </>
   );
 }
@@ -995,7 +1054,6 @@ function BackupScreen(props: {
   book: StaplePriceWatch;
   persistence: "unknown" | "granted" | "not-granted";
   commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
-  onHome: () => void;
 }) {
   return (
     <>
@@ -1056,9 +1114,6 @@ function BackupScreen(props: {
           Undo restore
         </button>
       ) : null}
-      <button type="button" className="secondary" onClick={props.onHome}>
-        Home
-      </button>
     </>
   );
 }
