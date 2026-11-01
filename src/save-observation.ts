@@ -44,9 +44,12 @@ export function saveObservation(
     next = created.book;
     categoryId = created.value.categoryId;
   }
-  if (input.observationId) {
+  if (input.observationId && !editing) {
+    return { ok: false, book, error: { code: "unknown-observation" } };
+  }
+  if (editing) {
     const updated = next.updateObservation({
-      observationId: input.observationId,
+      observationId: editing.id,
       categoryId,
       paidPence: input.paidPence,
       quantity: input.quantity,
@@ -56,9 +59,6 @@ export function saveObservation(
     });
     if (!updated.ok) {
       return { ok: false, book, error: updated.error };
-    }
-    if (!editing) {
-      throw new Error("Observation missing after update");
     }
     return {
       ok: true,
