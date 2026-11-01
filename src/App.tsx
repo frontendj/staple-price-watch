@@ -3,6 +3,7 @@ import { useRegisterSW } from "virtual:pwa-register/react";
 import { openTextFile, saveTextFile } from "./files";
 import { matchCategoryName } from "./read-shelf-tag";
 import { recogniseTag } from "./recognise-tag";
+import { saveObservation } from "./save-observation";
 import { localToday, monthLabel, poundsToPence, showDate, showMoney } from "./format";
 import { loadBook, saveBook } from "./store";
 import {
@@ -426,22 +427,13 @@ function CameraScreen(props: {
     if (!trimmedName || !family || !paidPence || !selectedUnit || promotionPrice === undefined) {
       return;
     }
-    let book = props.book;
-    let categoryId = matched?.id;
-    if (!categoryId) {
-      const created = await props.commit(book.addCategory({ name: trimmedName, unitFamily: family }));
-      if (!created.ok) {
-        return;
-      }
-      book = created.book;
-      categoryId = created.value.categoryId;
-    }
     const result = await props.commit(
-      book.confirmTag({
+      saveObservation(props.book, {
+        name: trimmedName,
+        unitFamily: family,
         visitId: joining?.id,
         date,
         shopId,
-        categoryId,
         paidPence,
         promotionPricePence: promotionPrice,
         quantity: Number(quantity),
@@ -1037,27 +1029,19 @@ function ObservationScreen(props: {
     if (promotionPrice === undefined) {
       return;
     }
-    let book = props.book;
-    let categoryId = matched?.id;
-    if (!categoryId) {
-      const created = await props.commit(book.addCategory({ name: trimmedName, unitFamily: newFamily }));
-      if (!created.ok) {
-        return;
-      }
-      book = created.book;
-      categoryId = created.value.categoryId;
-    }
-    const input = {
-      categoryId,
-      paidPence: paidPence ?? 0,
-      quantity: Number(quantity),
-      unit: selectedUnit,
-      promotionPricePence: promotionPrice,
-      comment,
-    };
-    const result = existing
-      ? await props.commit(book.updateObservation({ observationId: existing.id, ...input }))
-      : await props.commit(book.addObservation({ visitId: props.visitId, ...input }));
+    const result = await props.commit(
+      saveObservation(props.book, {
+        name: trimmedName,
+        unitFamily: family,
+        visitId: props.visitId,
+        observationId: existing?.id,
+        paidPence: paidPence ?? 0,
+        quantity: Number(quantity),
+        unit: selectedUnit,
+        promotionPricePence: promotionPrice,
+        comment,
+      }),
+    );
     if (!result.ok) {
       return;
     }
@@ -1065,7 +1049,9 @@ function ObservationScreen(props: {
       setPrice("");
       setPromotion("");
       setComment("");
-      const fresh = result.book.entryDefault(categoryId);
+      const categoryId = result.book.observations().find((item) => item.id === result.value.observationId)
+        ?.categoryId;
+      const fresh = categoryId ? result.book.entryDefault(categoryId) : undefined;
       if (fresh) {
         setQuantity(String(fresh.quantity));
         setUnit(fresh.unit);
