@@ -5,6 +5,8 @@ export type TagRead = {
   promotionPricePence?: number;
   quantity?: number;
   unit?: EnteredUnit;
+  text?: string;
+  label?: string;
 };
 
 function pence(pounds: string, fraction: string | undefined): number {
@@ -30,13 +32,24 @@ function unitFrom(token: string): EnteredUnit {
   return "item";
 }
 
+const amount = "(\\d+)(?:\\s*[.,·•∙⋅．]\\s*(\\d{1,2}))?(?!\\d)";
+
+function moneyPatterns(): { rates: RegExp; leading: RegExp; trailing: RegExp } {
+  return {
+    rates: new RegExp(`£\\s*${amount}\\s*(?:\\/|per)\\s*(?:100\\s*g|kg|g|ml|litres?|l)\\b`, "gi"),
+    leading: new RegExp(`£\\s*${amount}`, "gi"),
+    trailing: new RegExp(`${amount}\\s*£`, "gi"),
+  };
+}
+
 function packPrices(source: string): number[] {
-  const rates = [
-    ...source.matchAll(/£\s*\d+(?:[.,]\d{1,2})?\s*(?:\/|per)\s*(?:100\s*g|kg|g|ml|litres?|l)\b/gi),
-  ].map((match) => [match.index ?? 0, (match.index ?? 0) + match[0].length] as const);
-  const found = [...source.matchAll(/£\s*(\d+)(?:[.,](\d{1,2}))?/gi)].flatMap((match) => {
+  const { rates, leading, trailing } = moneyPatterns();
+  const rateSpans = [...source.matchAll(rates)].map(
+    (match) => [match.index ?? 0, (match.index ?? 0) + match[0].length] as const,
+  );
+  const found = [...source.matchAll(leading), ...source.matchAll(trailing)].flatMap((match) => {
     const at = match.index ?? 0;
-    if (rates.some(([start, end]) => at >= start && at < end)) {
+    if (rateSpans.some(([start, end]) => at >= start && at < end)) {
       return [];
     }
     const price = pence(match[1] ?? "0", match[2]);
@@ -45,16 +58,51 @@ function packPrices(source: string): number[] {
   return [...new Set(found)];
 }
 
+function productLabel(text: string): string {
+  const { rates, leading, trailing } = moneyPatterns();
+  return text
+    .replace(rates, " ")
+    .replace(leading, " ")
+    .replace(trailing, " ")
+    .replace(/\d+(?:[.,]\d+)?\s*(kg|g|ml|l|litres?|packs?)\b/gi, " ")
+    .replace(/\b(?:for|each|was|now|per|or|offer)\b/gi, " ")
+    .replace(/[^A-Za-z&'’\-\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function matchCategoryName(text: string, names: readonly string[]): string | undefined {
+  const hits = names.filter((name) => {
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      return false;
+    }
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?:$|[^A-Za-z0-9])`, "i").test(text);
+  });
+  hits.sort((left, right) => right.length - left.length);
+  return hits[0];
+}
+
+function finish(read: TagRead, source: string): TagRead {
+  const label = productLabel(source);
+  return {
+    ...read,
+    text: source || undefined,
+    label: label || undefined,
+  };
+}
+
 export function readShelfTag(text: string): TagRead {
-  const source = text.replace(/\s+/g, " ");
+  const source = text.replace(/\s+/g, " ").trim();
   const prices = packPrices(source);
   const multibuy = source.match(/(\d+)\s*for\s*£\s*(\d+)(?:[.,](\d{1,2}))?/i);
-  const each = source.match(/£\s*(\d+)(?:[.,](\d{1,2}))?\s*each\b/i);
+  const each = source.match(new RegExp(`£\\s*${amount}\\s*each\\b`, "i"));
   const sizes = [...source.matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|litres?|packs?)\b/gi)];
-  const perKilogram = source.match(/£\s*(\d+)(?:[.,](\d{1,2}))?\s*(?:\/|per)\s*kg\b/i);
+  const perKilogram = source.match(new RegExp(`£\\s*${amount}\\s*(?:\\/|per)\\s*kg\\b`, "i"));
   const competing = Boolean(multibuy && each) || sizes.length >= 2;
   if (competing) {
-    return {};
+    return finish({}, source);
   }
 
   let quantity: number | undefined;
@@ -69,20 +117,23 @@ export function readShelfTag(text: string): TagRead {
     quantity = Number((sizes[0][1] ?? "").replace(",", "."));
     unit = unitFrom(sizes[0][2] ?? "");
   } else if (perKilogram && prices.length === 0) {
-    return {
-      paidPence: pence(perKilogram[1] ?? "0", perKilogram[2]),
-      quantity: 1,
-      unit: "kg",
-    };
+    return finish(
+      {
+        paidPence: pence(perKilogram[1] ?? "0", perKilogram[2]),
+        quantity: 1,
+        unit: "kg",
+      },
+      source,
+    );
   }
 
   if (prices.length === 0) {
-    return { quantity, unit };
+    return finish({ quantity, unit }, source);
   }
   const high = Math.max(...prices);
   const low = Math.min(...prices);
   if (prices.length >= 2 && low < high) {
-    return { paidPence: high, promotionPricePence: low, quantity, unit };
+    return finish({ paidPence: high, promotionPricePence: low, quantity, unit }, source);
   }
-  return { paidPence: high, quantity, unit };
+  return finish({ paidPence: high, quantity, unit }, source);
 }

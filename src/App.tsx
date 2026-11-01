@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { openTextFile, saveTextFile } from "./files";
+import { matchCategoryName } from "./read-shelf-tag";
 import { recogniseTag } from "./recognise-tag";
 import { localToday, monthLabel, poundsToPence, showDate, showMoney } from "./format";
 import { loadBook, saveBook } from "./store";
@@ -205,6 +206,16 @@ function readPromotion(text: string): number | null | undefined {
   return poundsToPence(text);
 }
 
+function familyForUnit(unit: string | undefined): UnitFamily {
+  if (unit === "ml" || unit === "L") {
+    return "volume";
+  }
+  if (unit === "item") {
+    return "count";
+  }
+  return "mass";
+}
+
 function CameraScreen(props: {
   book: StaplePriceWatch;
   visitId?: string;
@@ -221,7 +232,9 @@ function CameraScreen(props: {
   const [promotion, setPromotion] = useState("");
   const [quantity, setQuantity] = useState("");
   const [unit, setUnit] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [newFamily, setNewFamily] = useState<UnitFamily>("mass");
+  const [categoryOpen, setCategoryOpen] = useState(false);
   const [draftId, setDraftId] = useState("");
   const [date, setDate] = useState(props.book.today());
   const [shopId, setShopId] = useState(props.book.shopChoices()[0]?.id ?? "");
@@ -229,21 +242,30 @@ function CameraScreen(props: {
   const current = props.visitId ? props.book.visit(props.visitId) : undefined;
   const chosenDraft = draftId ? props.book.visit(draftId) : undefined;
   const joining = current ?? chosenDraft;
-  const category = props.book.categories().find((item) => item.id === categoryId);
-  const units = category ? unitsFor(category.unitFamily) : [];
+  const trimmedName = categoryName.trim();
+  const matched = props.book.categories().find(
+    (item) => item.name.toLowerCase() === trimmedName.toLowerCase() && !item.archivedAt,
+  );
+  const creating = trimmedName.length > 0 && !matched;
+  const family = matched?.unitFamily ?? (trimmedName ? newFamily : undefined);
+  const units = family ? unitsFor(family) : [];
   const selectedUnit = units.includes(unit as (typeof units)[number]) ? unit : "";
   const paidPence = poundsToPence(price);
   const promotionPrice = readPromotion(promotion);
   const quote =
-    category && paidPence && Number(quantity) > 0 && selectedUnit && promotionPrice !== undefined
+    family && paidPence && Number(quantity) > 0 && selectedUnit && promotionPrice !== undefined
       ? quoteUnitPrice({
-          unitFamily: category.unitFamily,
+          unitFamily: family,
           paidPence,
           promotionPricePence: promotionPrice ?? undefined,
           quantity: Number(quantity),
           unit: selectedUnit,
         })
       : undefined;
+  const needle = trimmedName.toLowerCase();
+  const suggestions = props.book
+    .categoryChoices()
+    .filter((item) => needle.length === 0 || item.name.toLowerCase().includes(needle));
 
   useEffect(() => {
     if (phase !== "shoot") {
@@ -292,33 +314,81 @@ function CameraScreen(props: {
     if (shot !== shotRef.current) {
       return;
     }
-    setCategoryId("");
+    const foundName = matchCategoryName(
+      read.text ?? "",
+      props.book.categoryChoices().map((item) => item.name),
+    );
+    const found = foundName
+      ? props.book.categoryChoices().find((item) => item.name === foundName)
+      : undefined;
+    const nextFamily = found?.unitFamily ?? familyForUnit(read.unit);
+    const readQuantity = read.quantity ? String(read.quantity) : "";
+    const readUnit = read.unit ?? "";
+    const familyUnits = unitsFor(nextFamily);
+    setCategoryName(found?.name ?? read.label ?? "");
+    setNewFamily(nextFamily);
+    setCategoryOpen(false);
     setPrice(read.paidPence ? (read.paidPence / 100).toFixed(2) : "");
     setPromotion(read.promotionPricePence ? (read.promotionPricePence / 100).toFixed(2) : "");
-    setQuantity(read.quantity ? String(read.quantity) : "");
-    setUnit(read.unit ?? "");
+    if (readQuantity && readUnit && familyUnits.includes(readUnit as (typeof familyUnits)[number])) {
+      setQuantity(readQuantity);
+      setUnit(readUnit);
+    } else if (found) {
+      const preset = props.book.entryDefault(found.id);
+      if (preset && familyUnits.includes(preset.unit)) {
+        setQuantity(String(preset.quantity));
+        setUnit(preset.unit);
+      } else {
+        setQuantity("");
+        setUnit("");
+      }
+    } else {
+      setQuantity(readQuantity);
+      setUnit("");
+    }
     setComment("");
     setReading(false);
   }
 
-  function applyCategory(nextId: string) {
-    setCategoryId(nextId);
-    const next = props.book.categories().find((item) => item.id === nextId);
-    if (!next) {
-      return;
-    }
-    const familyUnits = unitsFor(next.unitFamily);
+  function keepPackOrDefault(nextId: string, nextFamily: UnitFamily) {
+    const familyUnits = unitsFor(nextFamily);
     if (quantity && unit && familyUnits.includes(unit as (typeof familyUnits)[number])) {
       return;
     }
     const preset = props.book.entryDefault(nextId);
-    if (preset) {
+    if (preset && familyUnits.includes(preset.unit)) {
       setQuantity(String(preset.quantity));
       setUnit(preset.unit);
       return;
     }
     setQuantity("");
     setUnit("");
+  }
+
+  function chooseCategory(next: { id: string; name: string; unitFamily: UnitFamily }) {
+    setCategoryName(next.name);
+    setNewFamily(next.unitFamily);
+    setCategoryOpen(false);
+    keepPackOrDefault(next.id, next.unitFamily);
+  }
+
+  function typeCategory(value: string) {
+    const wasKnown = Boolean(matched);
+    setCategoryName(value);
+    setCategoryOpen(true);
+    const next = props.book.categories().find(
+      (item) => item.name.toLowerCase() === value.trim().toLowerCase() && !item.archivedAt,
+    );
+    if (next) {
+      setNewFamily(next.unitFamily);
+      keepPackOrDefault(next.id, next.unitFamily);
+      return;
+    }
+    if (wasKnown) {
+      setNewFamily("mass");
+      setUnit("");
+      setQuantity("");
+    }
   }
 
   function shoot() {
@@ -342,7 +412,9 @@ function CameraScreen(props: {
     setReading(false);
     setPhase("shoot");
     setDraftId("");
-    setCategoryId("");
+    setCategoryName("");
+    setNewFamily("mass");
+    setCategoryOpen(false);
     setPrice("");
     setPromotion("");
     setQuantity("");
@@ -351,15 +423,25 @@ function CameraScreen(props: {
   }
 
   async function save() {
-    if (!category || !paidPence || !selectedUnit || promotionPrice === undefined) {
+    if (!trimmedName || !family || !paidPence || !selectedUnit || promotionPrice === undefined) {
       return;
     }
+    let book = props.book;
+    let categoryId = matched?.id;
+    if (!categoryId) {
+      const created = await props.commit(book.addCategory({ name: trimmedName, unitFamily: family }));
+      if (!created.ok) {
+        return;
+      }
+      book = created.book;
+      categoryId = created.value.categoryId;
+    }
     const result = await props.commit(
-      props.book.confirmTag({
+      book.confirmTag({
         visitId: joining?.id,
         date,
         shopId,
-        categoryId: category.id,
+        categoryId,
         paidPence,
         promotionPricePence: promotionPrice,
         quantity: Number(quantity),
@@ -417,15 +499,48 @@ function CameraScreen(props: {
         )}
         <label>
           <span>Category</span>
-          <select value={categoryId} onChange={(event) => applyCategory(event.target.value)}>
-            <option value="">Choose a category</option>
-            {props.book.categoryChoices().map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
+          <div className="combo">
+            <input
+              value={categoryName}
+              aria-autocomplete="list"
+              aria-expanded={categoryOpen}
+              onChange={(event) => typeCategory(event.target.value)}
+              onFocus={() => setCategoryOpen(true)}
+              onBlur={() => window.setTimeout(() => setCategoryOpen(false), 150)}
+            />
+            {categoryOpen ? (
+              <ul className="combo-list" role="listbox">
+                {suggestions.map((item) => (
+                  <li key={item.id}>
+                    <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => chooseCategory(item)}>
+                      {item.name}
+                    </button>
+                  </li>
+                ))}
+                {creating ? <li className="muted">Add “{trimmedName}” as a new category</li> : null}
+              </ul>
+            ) : null}
+          </div>
         </label>
+        {creating ? (
+          <label>
+            <span>Unit for {trimmedName}</span>
+            <select
+              value={newFamily}
+              onChange={(event) => {
+                const nextFamily = event.target.value as UnitFamily;
+                setNewFamily(nextFamily);
+                if (!unitsFor(nextFamily).includes(unit as (typeof units)[number])) {
+                  setUnit("");
+                }
+              }}
+            >
+              <option value="count">per item</option>
+              <option value="volume">per litre</option>
+              <option value="mass">per kilogram</option>
+            </select>
+          </label>
+        ) : null}
         <label>
           <span>Pack price (£)</span>
           <input inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} />
@@ -452,7 +567,7 @@ function CameraScreen(props: {
         <p>{quote ? `Unit price ${quote}` : "Enter a price and quantity to see the unit price."}</p>
         <button
           type="button"
-          disabled={!paidPence || !(Number(quantity) > 0) || !category || !selectedUnit || promotionPrice === undefined}
+          disabled={!paidPence || !(Number(quantity) > 0) || !trimmedName || !selectedUnit || promotionPrice === undefined}
           onClick={() => void save()}
         >
           Save
