@@ -92,8 +92,12 @@ function finish(read: TagRead, source: string, categoryNames: readonly string[])
   return { ...read, name };
 }
 
+function closeCurrencyGap(text: string): string {
+  return text.replace(/£\s+(?=\d)/g, "£").replace(/(\d)\s+(?=£)/g, "$1");
+}
+
 export function readShelfTag(text: string, categoryNames: readonly string[] = []): TagRead {
-  const source = text.replace(/\s+/g, " ").trim();
+  const source = closeCurrencyGap(text.replace(/\s+/g, " ").trim());
   const prices = packPrices(source);
   const multibuy = source.match(/(\d+)\s*for\s*£\s*(\d+)(?:[.,](\d{1,2}))?/i);
   const each = source.match(new RegExp(`£\\s*${amount}\\s*each\\b`, "i"));

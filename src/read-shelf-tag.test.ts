@@ -43,6 +43,17 @@ test("£ 12 . 5 is 1250 pence", () => {
   expect(fields.paidPence).toBe(1250);
 });
 
+test("Cabbage, 300g, and £    12.5 on separate lines is 1250 pence for 300 g", () => {
+  const fields = readShelfTag("Cabbage\n300g \n£    12.5 \n", []);
+
+  expect(fields).toEqual({
+    name: "Cabbage",
+    paidPence: 1250,
+    quantity: 300,
+    unit: "g",
+  });
+});
+
 test("£1.89/kg is 189 pence for 1 kg", () => {
   const fields = readShelfTag("£1.89/kg", ["Cherry tomatoes"]);
 
