@@ -37,7 +37,7 @@ export type Observation = {
   enteredUnit: EnteredUnit;
   canonicalQuantity: number;
   unitPricePence: number;
-  promotion: boolean;
+  promotionPricePence?: number;
   comment?: string;
   createdAt: string;
   updatedAt: string;
@@ -69,7 +69,8 @@ export type BookErrorCode =
   | "archived-category"
   | "archived-shop"
   | "incomplete-visit"
-  | "duplicate-warning"
+  | "duplicate-observation"
+  | "promotion-not-lower"
   | "not-draft"
   | "not-complete"
   | "empty-visit"
@@ -87,7 +88,7 @@ export type BookSuccess<T> = {
 export type BookFailure = {
   ok: false;
   book: StaplePriceWatch;
-  error: { code: BookErrorCode };
+  error: { code: BookErrorCode; observationId?: string };
 };
 
 export type BookResult<T> = BookSuccess<T> | BookFailure;
@@ -120,10 +121,10 @@ export type StatisticsPoint = {
   date: string;
   shopId: string;
   paidPence: number;
+  promotionPricePence?: number;
   enteredQuantity: number;
   enteredUnit: EnteredUnit;
   unitPricePence: number;
-  promotion: boolean;
 };
 
 export type Statistics = {
@@ -140,7 +141,7 @@ export type BackupCounts = {
 };
 
 export type Backup = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   exportedAt: string;
   shops: Shop[];
   categories: Category[];
@@ -207,7 +208,7 @@ const visitSchema = z.object({
   updatedAt: z.string().min(1),
 });
 
-const observationSchema = z.object({
+const observationFields = {
   id: z.string().min(1),
   visitId: z.string().min(1),
   categoryId: z.string().min(1),
@@ -216,10 +217,19 @@ const observationSchema = z.object({
   enteredUnit: unitSchema,
   canonicalQuantity: z.number().positive(),
   unitPricePence: z.number().positive(),
-  promotion: z.boolean(),
   comment: z.string().optional(),
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),
+};
+
+const observationSchema = z.object({
+  ...observationFields,
+  promotionPricePence: z.number().int().min(1).optional(),
+});
+
+const legacyObservationSchema = z.object({
+  ...observationFields,
+  promotion: z.boolean(),
 });
 
 const settingsSchema = z.object({
@@ -233,15 +243,18 @@ const settingsSchema = z.object({
   revision: z.number().int().nonnegative().optional().default(0),
 });
 
-const backupSchema = z.object({
-  schemaVersion: z.literal(1),
+const backupBody = {
   exportedAt: z.string().min(1),
   shops: z.array(shopSchema),
   categories: z.array(categorySchema),
   visits: z.array(visitSchema),
-  observations: z.array(observationSchema),
   settings: settingsSchema,
-});
+};
+
+const backupSchema = z.union([
+  z.object({ schemaVersion: z.literal(1), ...backupBody, observations: z.array(legacyObservationSchema) }),
+  z.object({ schemaVersion: z.literal(2), ...backupBody, observations: z.array(observationSchema) }),
+]);
 
 function emptySettings(): Settings {
   return {
@@ -407,10 +420,28 @@ function readBackup(input: unknown): Backup | undefined {
     }
   }
   const parsed = backupSchema.safeParse(value);
-  if (!parsed.success || !backupReferencesHold(parsed.data)) {
+  if (!parsed.success) {
     return undefined;
   }
-  return parsed.data;
+  const backup = migrateBackup(parsed.data);
+  if (!backupReferencesHold(backup)) {
+    return undefined;
+  }
+  return backup;
+}
+
+function migrateBackup(parsed: z.infer<typeof backupSchema>): Backup {
+  if (parsed.schemaVersion === 2) {
+    return parsed;
+  }
+  return {
+    ...parsed,
+    schemaVersion: 2,
+    observations: parsed.observations.map((observation) => {
+      const { promotion, ...rest } = observation;
+      return promotion ? { ...rest, promotionPricePence: observation.paidPence } : rest;
+    }),
+  };
 }
 
 function countsOf(backup: Backup): BackupCounts {
@@ -781,18 +812,66 @@ export class StaplePriceWatch {
     );
   }
 
+  confirmTag(input: {
+    visitId?: string;
+    date?: string;
+    shopId?: string;
+    categoryId: string;
+    paidPence: number;
+    quantity: number;
+    unit: string;
+    promotionPricePence?: number | null;
+    comment?: string;
+  }): BookResult<{ visitId: string; observationId: string }> {
+    if (input.visitId) {
+      const added = this.addObservation({ ...input, visitId: input.visitId });
+      if (!added.ok) {
+        return { ok: false, book: this, error: added.error };
+      }
+      return { ok: true, book: added.book, value: { visitId: input.visitId, observationId: added.value.observationId } };
+    }
+    if (!input.date || !input.shopId) {
+      return this.fail("incomplete-visit");
+    }
+    const started = this.startVisit({ date: input.date, shopId: input.shopId });
+    if (!started.ok) {
+      return { ok: false, book: this, error: started.error };
+    }
+    const added = started.book.addObservation({ ...input, visitId: started.value.visitId });
+    if (!added.ok) {
+      return { ok: false, book: this, error: added.error };
+    }
+    return {
+      ok: true,
+      book: added.book,
+      value: { visitId: started.value.visitId, observationId: added.value.observationId },
+    };
+  }
+
   addObservation(input: {
     visitId: string;
     categoryId: string;
     paidPence: number;
     quantity: number;
     unit: string;
-    promotion?: boolean;
+    promotionPricePence?: number | null;
     comment?: string;
   }): BookResult<{ observationId: string }> {
     const built = this.buildObservation(input, undefined);
     if (!built.ok) {
       return this.fail(built.error);
+    }
+    const duplicate = this.duplicateOf({
+      shopId: built.visit.shopId,
+      date: built.visit.date,
+      categoryId: built.category.id,
+      quantity: input.quantity,
+      unit: built.unit,
+      paidPence: input.paidPence,
+      promotionPricePence: built.promotionPricePence,
+    });
+    if (duplicate) {
+      return this.fail("duplicate-observation", duplicate.id);
     }
     const at = this.stamp();
     const observationId = crypto.randomUUID();
@@ -821,7 +900,7 @@ export class StaplePriceWatch {
             enteredUnit: built.unit,
             canonicalQuantity: built.canonicalQuantity,
             unitPricePence: built.unitPricePence,
-            promotion: input.promotion ?? false,
+            promotionPricePence: built.promotionPricePence,
             comment: blankToUndefined(input.comment),
             createdAt: at,
             updatedAt: at,
@@ -844,25 +923,45 @@ export class StaplePriceWatch {
     paidPence?: number;
     quantity?: number;
     unit?: string;
-    promotion?: boolean;
+    promotionPricePence?: number | null;
     comment?: string;
   }): BookResult<{ observationId: string }> {
     const current = this.state.observations.find((item) => item.id === input.observationId);
     if (!current) {
       return this.fail("unknown-observation");
     }
+    const paidPence = input.paidPence ?? current.paidPence;
+    const promotionPricePence =
+      input.promotionPricePence === undefined ? current.promotionPricePence : input.promotionPricePence;
     const built = this.buildObservation(
       {
         visitId: current.visitId,
         categoryId: input.categoryId ?? current.categoryId,
-        paidPence: input.paidPence ?? current.paidPence,
+        paidPence,
         quantity: input.quantity ?? current.enteredQuantity,
         unit: input.unit ?? current.enteredUnit,
+        promotionPricePence,
+        previous: { paidPence: current.paidPence, promotionPricePence: current.promotionPricePence },
       },
       current.categoryId,
     );
     if (!built.ok) {
       return this.fail(built.error);
+    }
+    const duplicate = this.duplicateOf(
+      {
+        shopId: built.visit.shopId,
+        date: built.visit.date,
+        categoryId: built.category.id,
+        quantity: input.quantity ?? current.enteredQuantity,
+        unit: built.unit,
+        paidPence,
+        promotionPricePence: built.promotionPricePence,
+      },
+      current.id,
+    );
+    if (duplicate) {
+      return this.fail("duplicate-observation", duplicate.id);
     }
     const at = this.stamp();
     return this.succeed(
@@ -881,7 +980,7 @@ export class StaplePriceWatch {
                 enteredUnit: built.unit,
                 canonicalQuantity: built.canonicalQuantity,
                 unitPricePence: built.unitPricePence,
-                promotion: input.promotion ?? current.promotion,
+                promotionPricePence: built.promotionPricePence,
                 comment: input.comment === undefined ? current.comment : blankToUndefined(input.comment),
                 updatedAt: at,
               }
@@ -926,10 +1025,7 @@ export class StaplePriceWatch {
     );
   }
 
-  completeVisit(
-    visitId: string,
-    options?: { acknowledgeDuplicate?: boolean },
-  ): BookResult<{ visitId: string }> {
+  completeVisit(visitId: string): BookResult<{ visitId: string }> {
     const visit = this.state.visits.find((item) => item.id === visitId);
     if (!visit) {
       return this.fail("unknown-visit");
@@ -943,20 +1039,6 @@ export class StaplePriceWatch {
     }
     if (visit.status === "complete") {
       return this.succeed(this.state, { visitId: visit.id });
-    }
-    const categories = new Set(mine.map((item) => item.categoryId));
-    const duplicate = this.state.visits.some(
-      (other) =>
-        other.id !== visit.id &&
-        other.status === "complete" &&
-        other.date === visit.date &&
-        other.shopId === visit.shopId &&
-        this.state.observations.some(
-          (item) => item.visitId === other.id && categories.has(item.categoryId),
-        ),
-    );
-    if (duplicate && !options?.acknowledgeDuplicate) {
-      return this.fail("duplicate-warning");
     }
     const at = this.stamp();
     return this.succeed(
@@ -1044,10 +1126,10 @@ export class StaplePriceWatch {
       if (query.to && visit.date > query.to) {
         return [];
       }
-      if (promotion === "exclude" && observation.promotion) {
+      if (promotion === "exclude" && observation.promotionPricePence !== undefined) {
         return [];
       }
-      if (promotion === "only" && !observation.promotion) {
+      if (promotion === "only" && observation.promotionPricePence === undefined) {
         return [];
       }
       return [
@@ -1057,10 +1139,10 @@ export class StaplePriceWatch {
           date: visit.date,
           shopId: visit.shopId,
           paidPence: observation.paidPence,
+          promotionPricePence: observation.promotionPricePence,
           enteredQuantity: observation.enteredQuantity,
           enteredUnit: observation.enteredUnit,
           unitPricePence: observation.unitPricePence,
-          promotion: observation.promotion,
         },
       ];
     });
@@ -1097,7 +1179,7 @@ export class StaplePriceWatch {
 
   exportBackup(): Backup {
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: this.stamp(),
       shops: this.shops(),
       categories: this.categories(),
@@ -1175,7 +1257,7 @@ export class StaplePriceWatch {
       "entered unit",
       "unit price pounds",
       "canonical unit",
-      "promotion",
+      "promotion pounds",
       "comment",
       "visit id",
       "observation id",
@@ -1197,7 +1279,7 @@ export class StaplePriceWatch {
           observation.enteredUnit,
           pounds(observation.unitPricePence),
           canonicalUnit(category.unitFamily),
-          observation.promotion ? "true" : "false",
+          observation.promotionPricePence === undefined ? "" : pounds(observation.promotionPricePence),
           observation.comment ?? "",
           visit.id,
           observation.id,
@@ -1213,6 +1295,35 @@ export class StaplePriceWatch {
     return stamp(this.clock.today(), this.state.settings.revision + 1);
   }
 
+  private duplicateOf(
+    candidate: {
+      shopId: string;
+      date: string;
+      categoryId: string;
+      quantity: number;
+      unit: EnteredUnit;
+      paidPence: number;
+      promotionPricePence?: number;
+    },
+    exceptId?: string,
+  ): Observation | undefined {
+    return this.state.observations.find((item) => {
+      if (item.id === exceptId) {
+        return false;
+      }
+      const visit = this.state.visits.find((entry) => entry.id === item.visitId);
+      return (
+        visit?.shopId === candidate.shopId &&
+        visit.date === candidate.date &&
+        item.categoryId === candidate.categoryId &&
+        item.enteredQuantity === candidate.quantity &&
+        item.enteredUnit === candidate.unit &&
+        item.paidPence === candidate.paidPence &&
+        item.promotionPricePence === candidate.promotionPricePence
+      );
+    });
+  }
+
   private buildObservation(
     input: {
       visitId: string;
@@ -1220,10 +1331,20 @@ export class StaplePriceWatch {
       paidPence: number;
       quantity: number;
       unit: string;
+      promotionPricePence?: number | null;
+      previous?: { paidPence: number; promotionPricePence?: number };
     },
     currentCategoryId: string | undefined,
   ):
-    | { ok: true; visit: Visit; category: Category; unit: EnteredUnit; canonicalQuantity: number; unitPricePence: number }
+    | {
+        ok: true;
+        visit: Visit;
+        category: Category;
+        unit: EnteredUnit;
+        canonicalQuantity: number;
+        unitPricePence: number;
+        promotionPricePence?: number;
+      }
     | { ok: false; error: BookErrorCode } {
     const visit = this.state.visits.find((item) => item.id === input.visitId);
     if (!visit) {
@@ -1246,19 +1367,36 @@ export class StaplePriceWatch {
     if (!validQuantity(input.quantity)) {
       return { ok: false, error: "invalid-quantity" };
     }
+    const offered =
+      input.promotionPricePence === null || input.promotionPricePence === undefined
+        ? undefined
+        : input.promotionPricePence;
+    const unchanged =
+      input.previous !== undefined &&
+      input.previous.paidPence === input.paidPence &&
+      input.previous.promotionPricePence === offered;
+    if (
+      offered !== undefined &&
+      (!validPrice(offered) || offered >= input.paidPence) &&
+      !(unchanged && offered === input.paidPence)
+    ) {
+      return { ok: false, error: "promotion-not-lower" };
+    }
     const canonicalQuantity = canonicalOf(input.quantity, unit);
+    const payPence = offered ?? input.paidPence;
     return {
       ok: true,
       visit,
       category,
       unit,
       canonicalQuantity,
-      unitPricePence: input.paidPence / canonicalQuantity,
+      unitPricePence: payPence / canonicalQuantity,
+      promotionPricePence: offered,
     };
   }
 
-  private fail(code: BookErrorCode): BookFailure {
-    return { ok: false, book: this, error: { code } };
+  private fail(code: BookErrorCode, observationId?: string): BookFailure {
+    return { ok: false, book: this, error: observationId ? { code, observationId } : { code } };
   }
 
   private succeed<T>(state: BookState, value: T): BookSuccess<T> {
@@ -1284,14 +1422,22 @@ export function unitsFor(family: UnitFamily): EnteredUnit[] {
 export function quoteUnitPrice(input: {
   unitFamily: UnitFamily;
   paidPence: number;
+  promotionPricePence?: number;
   quantity: number;
   unit: string;
 }): string | undefined {
   const unit = enteredUnitFor(input.unitFamily, input.unit);
-  if (!unit || !validPrice(input.paidPence) || !validQuantity(input.quantity)) {
+  const payPence = input.promotionPricePence ?? input.paidPence;
+  if (
+    !unit ||
+    !validPrice(input.paidPence) ||
+    !validQuantity(input.quantity) ||
+    (input.promotionPricePence !== undefined &&
+      (!validPrice(input.promotionPricePence) || input.promotionPricePence > input.paidPence))
+  ) {
     return undefined;
   }
-  return formatUnitPrice(input.paidPence / canonicalOf(input.quantity, unit), input.unitFamily);
+  return formatUnitPrice(payPence / canonicalOf(input.quantity, unit), input.unitFamily);
 }
 
 export function createStaplePriceWatch(clock: Clock): StaplePriceWatch {

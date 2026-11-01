@@ -29,7 +29,7 @@ A Visit that has not been completed. It is saved automatically and can be resume
 _Avoid_: temporary scan, unsaved form, session
 
 **Observation**:
-One recorded purchase of one Category during one Visit: paid price, quantity, unit, optional Promotion flag, optional Comment.
+One recorded price of one Category during one Visit: pack price, quantity, unit, optional Promotion price, optional Comment. It does not record whether the Shopper bought it.
 _Avoid_: line item, purchase, price update, product, entry
 
 **Unit Family**:
@@ -41,12 +41,12 @@ The unit used for comparison inside a Unit Family: kilogram for mass, litre for 
 _Avoid_: base unit, display unit (unless talking about on-screen labels)
 
 **Unit Price**:
-Paid price divided by quantity expressed in the Category's Canonical Unit. This is the only price used in statistics.
+The price the Shopper would pay, divided by quantity expressed in the Category's Canonical Unit. The price used is the Promotion price when one was recorded, otherwise the pack price. This is the only price used in statistics.
 _Avoid_: shelf price, pack price, total, line total
 
 **Promotion**:
-A flag on an Observation meaning the Shopper paid a promotional price. Promotions stay in the dataset and can be filtered later.
-_Avoid_: offer, deal, sale, discount
+An optional lower price for the same pack, recorded when the tag also shows a higher previous price. It replaces a yes/no tick. Promotions stay in the dataset and can be filtered later.
+_Avoid_: offer flag, deal, sale, discount
 
 **Comment**:
 Optional free text on an Observation. It may mention brand or quality. It never changes grouping or statistics.

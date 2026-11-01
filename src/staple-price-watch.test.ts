@@ -93,7 +93,7 @@ test("completing a Visit with Eggs 12 items at £2.40 stores a Unit Price of 20 
       enteredUnit: "item",
       canonicalQuantity: 12,
       unitPricePence: 20,
-      promotion: false,
+      promotionPricePence: undefined,
     }),
   ]);
   expect(book.visit(started.value.visitId)?.status).toBe("complete");
@@ -223,14 +223,14 @@ test("the next entry prefills the last quantity and unit, never the price", () =
       paidPence: 240,
       quantity: 12,
       unit: "item",
-      promotion: true,
+      promotionPricePence: 200,
       comment: "free range",
     }),
   ).book;
 
   expect(book.entryDefault(eggs.id)).toEqual({ quantity: 12, unit: "item" });
   expect(book.entryDefault(eggs.id)).not.toHaveProperty("paidPence");
-  expect(book.entryDefault(eggs.id)).not.toHaveProperty("promotion");
+  expect(book.entryDefault(eggs.id)).not.toHaveProperty("promotionPricePence");
   expect(book.entryDefault(eggs.id)).not.toHaveProperty("comment");
 });
 
@@ -256,7 +256,7 @@ test("a started Visit with an Observation stays a Draft until it is completed", 
   expect(book.visit(started.value.visitId)?.status).toBe("draft");
 });
 
-test("completing a second Visit for the same date, Shop, and Category warns, then can be acknowledged", () => {
+test("a second Visit at the same Shop and date can record a different price without a warning", () => {
   let book = createStaplePriceWatch({ today: () => "2026-10-31" });
   const eggs = book.categories().find((category) => category.name === "Eggs");
   const tesco = book.shops().find((shop) => shop.name === "Tesco");
@@ -287,14 +287,7 @@ test("completing a second Visit for the same date, Shop, and Category warns, the
     }),
   ).book;
 
-  const warned = book.completeVisit(second.value.visitId);
-  expect(warned.ok).toBe(false);
-  if (!warned.ok) {
-    expect(warned.error.code).toBe("duplicate-warning");
-  }
-  expect(book.visit(second.value.visitId)?.status).toBe("draft");
-
-  book = accept(book.completeVisit(second.value.visitId, { acknowledgeDuplicate: true })).book;
+  book = accept(book.completeVisit(second.value.visitId)).book;
   expect(book.visit(second.value.visitId)?.status).toBe("complete");
 });
 
@@ -450,16 +443,19 @@ test("excluding Promotions drops them from the Monthly Median and the sample cou
       paidPence: 300,
       quantity: 1,
       unit: "L",
-      promotion: true,
+      promotionPricePence: 50,
     }),
   ).book;
   book = accept(book.completeVisit(offer.value.visitId)).book;
 
   expect(book.statistics({ categoryId: milk.id }).months).toEqual([
-    { month: "2026-01", medianPence: 200, count: 2 },
+    { month: "2026-01", medianPence: 75, count: 2 },
   ]);
   expect(book.statistics({ categoryId: milk.id, promotion: "exclude" }).months).toEqual([
     { month: "2026-01", medianPence: 100, count: 1 },
+  ]);
+  expect(book.statistics({ categoryId: milk.id, promotion: "only" }).points).toEqual([
+    expect.objectContaining({ paidPence: 300, promotionPricePence: 50, unitPricePence: 50 }),
   ]);
 });
 
@@ -542,11 +538,270 @@ test("CSV has one row per completed Observation and skips Drafts", () => {
   expect(rows[1]).toContain("2.40");
   expect(rows[1]).toContain("12");
   expect(rows[1]).toContain("item");
-  expect(rows[1]).toContain("false");
+  expect(rows[0]).toContain("promotion pounds");
+  expect(rows[1]).not.toContain("false");
   expect(rows[1]).toContain("large");
   expect(rows[1]).toContain(done.value.visitId);
   expect(rows[1]).toContain(added.value.observationId);
   expect(book.toCsv()).not.toContain("Milk");
+});
+
+test("a promotion price lower than the pack price becomes the Unit Price", () => {
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
+  const milk = book.categories().find((category) => category.name === "Milk");
+  const tesco = book.shops().find((shop) => shop.name === "Tesco");
+  if (!milk || !tesco) {
+    throw new Error("starter Milk or Tesco missing");
+  }
+  const started = accept(book.startVisit({ date: "2026-10-31", shopId: tesco.id }));
+  book = accept(
+    started.book.addObservation({
+      visitId: started.value.visitId,
+      categoryId: milk.id,
+      paidPence: 115,
+      quantity: 568,
+      unit: "ml",
+      promotionPricePence: 99,
+    }),
+  ).book;
+  const observation = book.observations()[0];
+  expect(observation?.paidPence).toBe(115);
+  expect(observation?.promotionPricePence).toBe(99);
+  expect(observation?.unitPricePence).toBe(99 / 0.568);
+});
+
+test("a promotion price that is not lower than the pack price is refused", () => {
+  const book = createStaplePriceWatch({ today: () => "2026-10-31" });
+  const milk = book.categories().find((category) => category.name === "Milk");
+  const tesco = book.shops().find((shop) => shop.name === "Tesco");
+  if (!milk || !tesco) {
+    throw new Error("starter Milk or Tesco missing");
+  }
+  const started = accept(book.startVisit({ date: "2026-10-31", shopId: tesco.id }));
+  const equal = started.book.addObservation({
+    visitId: started.value.visitId,
+    categoryId: milk.id,
+    paidPence: 115,
+    quantity: 1,
+    unit: "L",
+    promotionPricePence: 115,
+  });
+  expect(equal.ok).toBe(false);
+  if (!equal.ok) {
+    expect(equal.error.code).toBe("promotion-not-lower");
+  }
+  expect(started.book.observations()).toEqual([]);
+});
+
+test("the same offer on the same Shop and date is refused and names the existing Observation", () => {
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
+  const milk = book.categories().find((category) => category.name === "Milk");
+  const tesco = book.shops().find((shop) => shop.name === "Tesco");
+  if (!milk || !tesco) {
+    throw new Error("starter Milk or Tesco missing");
+  }
+  const first = accept(
+    book.confirmTag({
+      date: "2026-10-31",
+      shopId: tesco.id,
+      categoryId: milk.id,
+      paidPence: 115,
+      quantity: 568,
+      unit: "ml",
+    }),
+  );
+  book = first.book;
+  expect(book.visit(first.value.visitId)?.status).toBe("draft");
+  expect(book.observations()).toHaveLength(1);
+
+  const duplicate = book.confirmTag({
+    date: "2026-10-31",
+    shopId: tesco.id,
+    categoryId: milk.id,
+    paidPence: 115,
+    quantity: 568,
+    unit: "ml",
+  });
+  expect(duplicate.ok).toBe(false);
+  if (!duplicate.ok) {
+    expect(duplicate.error.code).toBe("duplicate-observation");
+    expect(duplicate.error.observationId).toBe(first.value.observationId);
+  }
+  expect(book.visits()).toHaveLength(1);
+
+  book = accept(book.completeVisit(first.value.visitId)).book;
+  const again = book.confirmTag({
+    date: "2026-10-31",
+    shopId: tesco.id,
+    categoryId: milk.id,
+    paidPence: 115,
+    quantity: 568,
+    unit: "ml",
+  });
+  expect(again.ok).toBe(false);
+  expect(book.visits()).toHaveLength(1);
+
+  const otherPack = accept(
+    book.confirmTag({
+      date: "2026-10-31",
+      shopId: tesco.id,
+      categoryId: milk.id,
+      paidPence: 115,
+      quantity: 2,
+      unit: "L",
+    }),
+  );
+  expect(otherPack.book.observations()).toHaveLength(2);
+});
+
+test("editing an Observation onto an identical sibling is refused, and saving it unchanged is kept", () => {
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
+  const milk = book.categories().find((category) => category.name === "Milk");
+  const tesco = book.shops().find((shop) => shop.name === "Tesco");
+  if (!milk || !tesco) {
+    throw new Error("starter Milk or Tesco missing");
+  }
+  const first = accept(
+    book.confirmTag({
+      date: "2026-10-31",
+      shopId: tesco.id,
+      categoryId: milk.id,
+      paidPence: 115,
+      quantity: 1,
+      unit: "L",
+    }),
+  );
+  book = first.book;
+  const second = accept(
+    book.confirmTag({
+      date: "2026-10-31",
+      shopId: tesco.id,
+      categoryId: milk.id,
+      paidPence: 130,
+      quantity: 1,
+      unit: "L",
+    }),
+  );
+  book = second.book;
+  const collided = book.updateObservation({
+    observationId: second.value.observationId,
+    paidPence: 115,
+  });
+  expect(collided.ok).toBe(false);
+  if (!collided.ok) {
+    expect(collided.error.observationId).toBe(first.value.observationId);
+  }
+  book = accept(
+    book.updateObservation({
+      observationId: second.value.observationId,
+      comment: "same price",
+    }),
+  ).book;
+  expect(book.observations().find((item) => item.id === second.value.observationId)?.comment).toBe("same price");
+});
+
+test("a Draft price stays off the chart until the Visit is completed", () => {
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
+  const milk = book.categories().find((category) => category.name === "Milk");
+  const tesco = book.shops().find((shop) => shop.name === "Tesco");
+  if (!milk || !tesco) {
+    throw new Error("starter Milk or Tesco missing");
+  }
+  const saved = accept(
+    book.confirmTag({
+      date: "2026-10-31",
+      shopId: tesco.id,
+      categoryId: milk.id,
+      paidPence: 115,
+      promotionPricePence: 99,
+      quantity: 1,
+      unit: "L",
+    }),
+  );
+  book = saved.book;
+  expect(book.statistics({ categoryId: milk.id }).points).toEqual([]);
+  book = accept(book.completeVisit(saved.value.visitId)).book;
+  expect(book.statistics({ categoryId: milk.id }).points).toEqual([
+    expect.objectContaining({ unitPricePence: 99, promotionPricePence: 99, paidPence: 115 }),
+  ]);
+});
+
+test("a previous Backup tick becomes an equal promotion price and stays valid until a price changes", () => {
+  let book = createStaplePriceWatch({ today: () => "2026-10-31" });
+  const milk = book.categories().find((category) => category.name === "Milk");
+  const tesco = book.shops().find((shop) => shop.name === "Tesco");
+  if (!milk || !tesco) {
+    throw new Error("starter Milk or Tesco missing");
+  }
+  const saved = accept(
+    book.confirmTag({
+      date: "2026-10-31",
+      shopId: tesco.id,
+      categoryId: milk.id,
+      paidPence: 115,
+      quantity: 568,
+      unit: "ml",
+    }),
+  );
+  book = accept(saved.book.completeVisit(saved.value.visitId)).book;
+  const current = book.exportBackup();
+  const observation = current.observations[0];
+  if (!observation) {
+    throw new Error("missing observation");
+  }
+  const legacy = {
+    ...current,
+    schemaVersion: 1,
+    observations: [
+      {
+        id: observation.id,
+        visitId: observation.visitId,
+        categoryId: observation.categoryId,
+        paidPence: 115,
+        enteredQuantity: 568,
+        enteredUnit: "ml",
+        canonicalQuantity: 0.568,
+        unitPricePence: 115 / 0.568,
+        promotion: true,
+        createdAt: observation.createdAt,
+        updatedAt: observation.updatedAt,
+      },
+      {
+        id: "plain",
+        visitId: observation.visitId,
+        categoryId: observation.categoryId,
+        paidPence: 130,
+        enteredQuantity: 1,
+        enteredUnit: "L",
+        canonicalQuantity: 1,
+        unitPricePence: 130,
+        promotion: false,
+        createdAt: observation.createdAt,
+        updatedAt: observation.updatedAt,
+      },
+    ],
+  };
+  const restored = accept(book.restoreBackup(legacy));
+  const migrated = restored.book.observations().find((item) => item.id === observation.id);
+  const plain = restored.book.observations().find((item) => item.id === "plain");
+  expect(migrated?.promotionPricePence).toBe(115);
+  expect(migrated?.paidPence).toBe(115);
+  expect(migrated?.unitPricePence).toBe(115 / 0.568);
+  expect(plain?.promotionPricePence).toBeUndefined();
+
+  const kept = accept(
+    restored.book.updateObservation({ observationId: observation.id, comment: "still equal" }),
+  );
+  expect(kept.book.observations().find((item) => item.id === observation.id)?.promotionPricePence).toBe(115);
+  const raised = accept(kept.book.updateObservation({ observationId: observation.id, paidPence: 140 }));
+  const refused = raised.book.updateObservation({
+    observationId: observation.id,
+    promotionPricePence: 140,
+  });
+  expect(refused.ok).toBe(false);
+  if (!refused.ok) {
+    expect(refused.error.code).toBe("promotion-not-lower");
+  }
 });
 
 test("a price quote shows £6.00/kg for 350 g at 210 pence before it is saved", () => {
@@ -556,4 +811,16 @@ test("a price quote shows £6.00/kg for 350 g at 210 pence before it is saved", 
   expect(quoteUnitPrice({ unitFamily: "volume", paidPence: 0, quantity: 1, unit: "L" })).toBe(
     undefined,
   );
+});
+
+test("a price quote still shows £2.02/L when the promotion price equals the pack price", () => {
+  expect(
+    quoteUnitPrice({
+      unitFamily: "volume",
+      paidPence: 115,
+      promotionPricePence: 115,
+      quantity: 568,
+      unit: "ml",
+    }),
+  ).toBe("£2.02/L");
 });

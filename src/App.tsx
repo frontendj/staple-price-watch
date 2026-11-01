@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { openTextFile, saveTextFile } from "./files";
+import { recogniseTag } from "./recognise-tag";
 import { localToday, monthLabel, poundsToPence, showDate, showMoney } from "./format";
 import { loadBook, saveBook } from "./store";
 import {
@@ -18,6 +19,7 @@ type Screen =
   | { name: "new-visit" }
   | { name: "visit"; visitId: string }
   | { name: "observation"; visitId: string; observationId?: string }
+  | { name: "camera" }
   | { name: "statistics" }
   | { name: "categories" }
   | { name: "shops" }
@@ -38,7 +40,8 @@ const errors: Record<BookErrorCode, string> = {
   "archived-category": "That category is archived.",
   "archived-shop": "That shop is archived.",
   "incomplete-visit": "Add a date, a shop, and at least one item before completing.",
-  "duplicate-warning": "A completed visit already has this shop, date, and category.",
+  "duplicate-observation": "That price is already recorded.",
+  "promotion-not-lower": "The promotion price has to be lower than the pack price.",
   "not-draft": "Only a draft can be discarded.",
   "not-complete": "Only a completed visit can be deleted this way.",
   "empty-visit": "Deleting this item would leave the visit empty.",
@@ -51,6 +54,7 @@ const errors: Record<BookErrorCode, string> = {
 export function App() {
   const [book, setBook] = useState<StaplePriceWatch | null>(null);
   const [screen, setScreen] = useState<Screen>({ name: "home" });
+  const [cameraVisitId, setCameraVisitId] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
   const [persistence, setPersistence] = useState<"unknown" | "granted" | "not-granted">("unknown");
   const {
@@ -77,7 +81,15 @@ export function App() {
 
   async function commit<T>(result: BookResult<T>): Promise<BookResult<T>> {
     if (!result.ok) {
-      setNotice(errors[result.error.code]);
+      const existing = result.error.observationId
+        ? result.book.observations().find((item) => item.id === result.error.observationId)
+        : undefined;
+      const visit = existing ? result.book.visit(existing.visitId) : undefined;
+      setNotice(
+        existing && visit
+          ? `${errors[result.error.code]} ${shopName(result.book, visit.shopId)} ${showDate(visit.date)}, ${showMoney(existing.paidPence)} for ${existing.enteredQuantity} ${existing.enteredUnit}.`
+          : errors[result.error.code],
+      );
       return result;
     }
     setNotice("");
@@ -140,12 +152,23 @@ export function App() {
           book={book}
           visitId={screen.visitId}
           commit={commit}
-          onHome={() => setScreen({ name: "home" })}
+          onHome={() => {
+            setCameraVisitId((current) => (current === screen.visitId ? undefined : current));
+            setScreen({ name: "home" });
+          }}
           onEdit={(observationId) =>
             setScreen({ name: "observation", visitId: screen.visitId, observationId })
           }
           onAdd={() => setScreen({ name: "observation", visitId: screen.visitId })}
           onCompleted={rememberPersistence}
+        />
+      ) : null}
+      {screen.name === "camera" ? (
+        <CameraScreen
+          book={book}
+          visitId={cameraVisitId}
+          commit={commit}
+          onVisit={setCameraVisitId}
         />
       ) : null}
       {screen.name === "observation" ? (
@@ -175,9 +198,329 @@ export function App() {
   );
 }
 
+function readPromotion(text: string): number | null | undefined {
+  if (text.trim() === "") {
+    return null;
+  }
+  return poundsToPence(text);
+}
+
+function CameraScreen(props: {
+  book: StaplePriceWatch;
+  visitId?: string;
+  commit: <T>(result: BookResult<T>) => Promise<BookResult<T>>;
+  onVisit: (visitId: string | undefined) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | undefined>(undefined);
+  const shotRef = useRef(0);
+  const [phase, setPhase] = useState<"shoot" | "confirm">("shoot");
+  const [cameraState, setCameraState] = useState<"starting" | "ready" | "unavailable">("starting");
+  const [reading, setReading] = useState(false);
+  const [price, setPrice] = useState("");
+  const [promotion, setPromotion] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [unit, setUnit] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [draftId, setDraftId] = useState("");
+  const [date, setDate] = useState(props.book.today());
+  const [shopId, setShopId] = useState(props.book.shopChoices()[0]?.id ?? "");
+  const [comment, setComment] = useState("");
+  const current = props.visitId ? props.book.visit(props.visitId) : undefined;
+  const chosenDraft = draftId ? props.book.visit(draftId) : undefined;
+  const joining = current ?? chosenDraft;
+  const category = props.book.categories().find((item) => item.id === categoryId);
+  const units = category ? unitsFor(category.unitFamily) : [];
+  const selectedUnit = units.includes(unit as (typeof units)[number]) ? unit : "";
+  const paidPence = poundsToPence(price);
+  const promotionPrice = readPromotion(promotion);
+  const quote =
+    category && paidPence && Number(quantity) > 0 && selectedUnit && promotionPrice !== undefined
+      ? quoteUnitPrice({
+          unitFamily: category.unitFamily,
+          paidPence,
+          promotionPricePence: promotionPrice ?? undefined,
+          quantity: Number(quantity),
+          unit: selectedUnit,
+        })
+      : undefined;
+
+  useEffect(() => {
+    if (phase !== "shoot") {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = undefined;
+      setCameraState("starting");
+      return;
+    }
+    let cancelled = false;
+    setCameraState("starting");
+    const request = navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } });
+    if (!request) {
+      setCameraState("unavailable");
+      return;
+    }
+    void request
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+        setCameraState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCameraState("unavailable");
+        }
+      });
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = undefined;
+    };
+  }, [phase]);
+
+  async function useShot(blob: Blob) {
+    const shot = shotRef.current + 1;
+    shotRef.current = shot;
+    setReading(true);
+    setPhase("confirm");
+    const read = await recogniseTag(blob);
+    if (shot !== shotRef.current) {
+      return;
+    }
+    setCategoryId("");
+    setPrice(read.paidPence ? (read.paidPence / 100).toFixed(2) : "");
+    setPromotion(read.promotionPricePence ? (read.promotionPricePence / 100).toFixed(2) : "");
+    setQuantity(read.quantity ? String(read.quantity) : "");
+    setUnit(read.unit ?? "");
+    setComment("");
+    setReading(false);
+  }
+
+  function applyCategory(nextId: string) {
+    setCategoryId(nextId);
+    const next = props.book.categories().find((item) => item.id === nextId);
+    if (!next) {
+      return;
+    }
+    const familyUnits = unitsFor(next.unitFamily);
+    if (quantity && unit && familyUnits.includes(unit as (typeof familyUnits)[number])) {
+      return;
+    }
+    const preset = props.book.entryDefault(nextId);
+    if (preset) {
+      setQuantity(String(preset.quantity));
+      setUnit(preset.unit);
+      return;
+    }
+    setQuantity("");
+    setUnit("");
+  }
+
+  function shoot() {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (blob) {
+        void useShot(blob);
+      }
+    }, "image/jpeg");
+  }
+
+  function retake() {
+    shotRef.current += 1;
+    setReading(false);
+    setPhase("shoot");
+    setCategoryId("");
+    setPrice("");
+    setPromotion("");
+    setQuantity("");
+    setUnit("");
+    setComment("");
+  }
+
+  async function save() {
+    if (!category || !paidPence || !selectedUnit || promotionPrice === undefined) {
+      return;
+    }
+    const result = await props.commit(
+      props.book.confirmTag({
+        visitId: joining?.id,
+        date,
+        shopId,
+        categoryId: category.id,
+        paidPence,
+        promotionPricePence: promotionPrice,
+        quantity: Number(quantity),
+        unit: selectedUnit,
+        comment,
+      }),
+    );
+    if (!result.ok) {
+      return;
+    }
+    props.onVisit(result.value.visitId);
+    setDraftId("");
+    retake();
+  }
+
+  if (phase === "confirm") {
+    return (
+      <>
+        <h1>Confirm tag</h1>
+        {reading ? <p className="muted">Reading the tag…</p> : null}
+        {current ? (
+          <p>
+            {shopName(props.book, current.shopId)} · {showDate(current.date)}
+          </p>
+        ) : (
+          <label>
+            <span>Add to a draft</span>
+            <select value={draftId} onChange={(event) => setDraftId(event.target.value)}>
+              <option value="">New visit</option>
+              {props.book.drafts().map((visit) => (
+                <option key={visit.id} value={visit.id}>
+                  {showDate(visit.date)} · {shopName(props.book, visit.shopId)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {joining ? null : (
+          <>
+            <label>
+              <span>Date</span>
+              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+            </label>
+            <label>
+              <span>Shop</span>
+              <select value={shopId} onChange={(event) => setShopId(event.target.value)}>
+                {props.book.shopChoices().map((shop) => (
+                  <option key={shop.id} value={shop.id}>
+                    {shop.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+        <label>
+          <span>Category</span>
+          <select value={categoryId} onChange={(event) => applyCategory(event.target.value)}>
+            <option value="">Choose a category</option>
+            {props.book.categoryChoices().map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Pack price (£)</span>
+          <input inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} />
+        </label>
+        <label>
+          <span>Quantity</span>
+          <input inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+        </label>
+        <div className="units">
+          {units.map((choice) => (
+            <button key={choice} type="button" aria-pressed={choice === selectedUnit} onClick={() => setUnit(choice)}>
+              {choice}
+            </button>
+          ))}
+        </div>
+        <label>
+          <span>Promotion price (£)</span>
+          <input inputMode="decimal" value={promotion} onChange={(event) => setPromotion(event.target.value)} />
+        </label>
+        <label>
+          <span>Comment</span>
+          <textarea value={comment} onChange={(event) => setComment(event.target.value)} />
+        </label>
+        <p>{quote ? `Unit price ${quote}` : "Enter a price and quantity to see the unit price."}</p>
+        <button
+          type="button"
+          disabled={!paidPence || !(Number(quantity) > 0) || !category || !selectedUnit || promotionPrice === undefined}
+          onClick={() => void save()}
+        >
+          Save
+        </button>
+        <button type="button" className="secondary" onClick={retake}>
+          Retake
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h1>Camera</h1>
+      {current ? (
+        <p>
+          Next tag joins {shopName(props.book, current.shopId)} · {showDate(current.date)}
+        </p>
+      ) : (
+        <p className="muted">The first tag starts the visit.</p>
+      )}
+      <video ref={videoRef} autoPlay playsInline muted />
+      {cameraState === "ready" ? (
+        <button type="button" onClick={shoot}>
+          Take photo
+        </button>
+      ) : null}
+      {cameraState === "unavailable" ? (
+        <>
+          <p className="muted">The camera is unavailable. Choose a photo of the tag instead.</p>
+          <label>
+            <span>Photo of the tag</span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) {
+                  void useShot(file);
+                }
+              }}
+            />
+          </label>
+        </>
+      ) : null}
+      {current ? (
+        <button
+          type="button"
+          onClick={() => {
+            void props.commit(props.book.completeVisit(current.id)).then(async (result) => {
+              if (result.ok) {
+                props.onVisit(undefined);
+              }
+            });
+          }}
+        >
+          Complete visit
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 const tabs = [
   { name: "home", label: "Home" },
   { name: "statistics", label: "Statistics" },
+  { name: "camera", label: "Camera" },
   { name: "categories", label: "Categories" },
   { name: "shops", label: "Shops" },
   { name: "backup", label: "Backup" },
@@ -186,6 +529,7 @@ const tabs = [
 function tabFor(screen: Screen): (typeof tabs)[number]["name"] {
   if (
     screen.name === "statistics" ||
+    screen.name === "camera" ||
     screen.name === "categories" ||
     screen.name === "shops" ||
     screen.name === "backup"
@@ -228,6 +572,14 @@ function TabIcon(props: { name: (typeof tabs)[number]["name"] }) {
     return (
       <svg {...common}>
         <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" />
+      </svg>
+    );
+  }
+  if (props.name === "camera") {
+    return (
+      <svg {...common}>
+        <path d="M4 8h3l2-2h6l2 2h3v11H4z" />
+        <circle cx="12" cy="13" r="3" />
       </svg>
     );
   }
@@ -364,7 +716,6 @@ function VisitScreen(props: {
   onCompleted: (book: StaplePriceWatch) => Promise<void>;
 }) {
   const visit = props.book.visit(props.visitId);
-  const [duplicate, setDuplicate] = useState(false);
   if (!visit) {
     return (
       <>
@@ -414,9 +765,9 @@ function VisitScreen(props: {
           return (
             <li key={observation.id}>
               <button type="button" className="secondary" onClick={() => props.onEdit(observation.id)}>
-                {category?.name ?? "Category"} · {showMoney(observation.paidPence)} ·{" "}
+                {category?.name ?? "Category"} · {showMoney(observation.paidPence)}
+                {observation.promotionPricePence ? ` · offer ${showMoney(observation.promotionPricePence)}` : ""} ·{" "}
                 {props.book.displayUnitPrice(observation.id)}
-                {observation.promotion ? " · promotion" : ""}
               </button>
             </li>
           );
@@ -425,34 +776,11 @@ function VisitScreen(props: {
       <button type="button" onClick={props.onAdd}>
         Add observation
       </button>
-      {duplicate ? (
-        <div className="notice">
-          <p>A completed visit already has this shop, date, and one of these categories.</p>
-          <button
-            type="button"
-            onClick={() => {
-              void props.commit(props.book.completeVisit(visit.id, { acknowledgeDuplicate: true })).then(async (result) => {
-                if (result.ok) {
-                  await props.onCompleted(result.book);
-                  props.onHome();
-                }
-              });
-            }}
-          >
-            Complete anyway
-          </button>
-        </div>
-      ) : null}
       {visit.status === "draft" ? (
         <button
           type="button"
           onClick={() => {
-            const result = props.book.completeVisit(visit.id);
-            if (!result.ok && result.error.code === "duplicate-warning") {
-              setDuplicate(true);
-              return;
-            }
-            void props.commit(result).then(async (completed) => {
+            void props.commit(props.book.completeVisit(visit.id)).then(async (completed) => {
               if (completed.ok) {
                 await props.onCompleted(completed.book);
                 props.onHome();
@@ -522,7 +850,9 @@ function ObservationScreen(props: {
     existing ? String(existing.enteredQuantity) : preset ? String(preset.quantity) : "",
   );
   const [unit, setUnit] = useState(existing?.enteredUnit ?? preset?.unit ?? "item");
-  const [promotion, setPromotion] = useState(existing?.promotion ?? false);
+  const [promotion, setPromotion] = useState(
+    existing?.promotionPricePence ? (existing.promotionPricePence / 100).toFixed(2) : "",
+  );
   const [comment, setComment] = useState(existing?.comment ?? "");
   const trimmedName = categoryName.trim();
   const matched = props.book.categories().find(
@@ -535,11 +865,13 @@ function ObservationScreen(props: {
   const units = unitsFor(family);
   const selectedUnit = units.includes(unit) ? unit : (units[0] ?? "item");
   const paidPence = poundsToPence(price);
+  const promotionPrice = readPromotion(promotion);
   const quote =
-    trimmedName && paidPence && Number(quantity) > 0
+    trimmedName && paidPence && Number(quantity) > 0 && promotionPrice !== undefined
       ? quoteUnitPrice({
           unitFamily: family,
           paidPence,
+          promotionPricePence: promotionPrice ?? undefined,
           quantity: Number(quantity),
           unit: selectedUnit,
         })
@@ -586,6 +918,9 @@ function ObservationScreen(props: {
   }
 
   async function save(andAnother: boolean) {
+    if (promotionPrice === undefined) {
+      return;
+    }
     let book = props.book;
     let categoryId = matched?.id;
     if (!categoryId) {
@@ -601,7 +936,7 @@ function ObservationScreen(props: {
       paidPence: paidPence ?? 0,
       quantity: Number(quantity),
       unit: selectedUnit,
-      promotion,
+      promotionPricePence: promotionPrice,
       comment,
     };
     const result = existing
@@ -612,7 +947,7 @@ function ObservationScreen(props: {
     }
     if (andAnother && !existing) {
       setPrice("");
-      setPromotion(false);
+      setPromotion("");
       setComment("");
       const fresh = result.book.entryDefault(categoryId);
       if (fresh) {
@@ -663,7 +998,7 @@ function ObservationScreen(props: {
         </label>
       ) : null}
       <label>
-        <span>Paid price (£)</span>
+        <span>Pack price (£)</span>
         <input inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} />
       </label>
       <label>
@@ -683,24 +1018,19 @@ function ObservationScreen(props: {
         ))}
       </div>
       <label>
-        <span>Promotion</span>
-        <input
-          type="checkbox"
-          checked={promotion}
-          onChange={(event) => setPromotion(event.target.checked)}
-          style={{ width: "auto" }}
-        />
+        <span>Promotion price (£)</span>
+        <input inputMode="decimal" value={promotion} onChange={(event) => setPromotion(event.target.value)} />
       </label>
       <label>
         <span>Comment</span>
         <textarea value={comment} onChange={(event) => setComment(event.target.value)} />
       </label>
       <p>{quote ? `Unit price ${quote}` : "Enter a price and quantity to see the unit price."}</p>
-      <button type="button" onClick={() => void save(false)}>
+      <button type="button" disabled={promotionPrice === undefined} onClick={() => void save(false)}>
         Save
       </button>
       {existing ? null : (
-        <button type="button" className="secondary" onClick={() => void save(true)}>
+        <button type="button" className="secondary" disabled={promotionPrice === undefined} onClick={() => void save(true)}>
           Save and add another
         </button>
       )}
@@ -815,7 +1145,8 @@ function StatisticsScreen(props: { book: StaplePriceWatch; onOpen: (screen: Scre
             <th>Date</th>
             <th>Shop</th>
             <th>Pack</th>
-            <th>Paid</th>
+            <th>Price</th>
+            <th>Offer</th>
             <th>Unit</th>
           </tr>
         </thead>
@@ -826,9 +1157,9 @@ function StatisticsScreen(props: { book: StaplePriceWatch; onOpen: (screen: Scre
                 <td>{shopName(props.book, point.shopId)}</td>
                 <td>
                   {point.enteredQuantity} {point.enteredUnit}
-                  {point.promotion ? " promo" : ""}
                 </td>
                 <td>{showMoney(point.paidPence)}</td>
+                <td>{point.promotionPricePence ? showMoney(point.promotionPricePence) : ""}</td>
                 <td>{props.book.displayUnitPrice(point.observationId)}</td>
               </tr>
             ))}

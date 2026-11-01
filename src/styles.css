@@ -182,6 +182,11 @@ svg {
   border: 1px solid #e4ddd2;
 }
 
+video {
+  width: 100%;
+  background: #1c1915;
+}
+
 .combo {
   position: relative;
 }
