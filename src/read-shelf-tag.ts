@@ -1,4 +1,4 @@
-import type { EnteredUnit } from "./staple-price-watch";
+import { poundsToPence, type EnteredUnit } from "./staple-price-watch";
 
 export type TagRead = {
   paidPence?: number;
@@ -10,9 +10,8 @@ export type TagRead = {
 };
 
 function pence(pounds: string, fraction: string | undefined): number {
-  const whole = Number(pounds);
-  const digits = (fraction ?? "").padEnd(2, "0").slice(0, 2);
-  return whole * 100 + Number(digits || "0");
+  const written = fraction === undefined ? pounds : `${pounds}.${fraction}`;
+  return poundsToPence(written) ?? 0;
 }
 
 function unitFrom(token: string): EnteredUnit {
@@ -32,7 +31,7 @@ function unitFrom(token: string): EnteredUnit {
   return "item";
 }
 
-const amount = "(\\d+)(?:\\s*[.,·•∙⋅．]\\s*(\\d{1,2}))?(?!\\d)";
+const amount = "(\\d+)(?:\\s*[.,·•∙⋅．]\\s*(\\d{1,3}))?(?!\\d)";
 
 function moneyPatterns(): { rates: RegExp; leading: RegExp; trailing: RegExp } {
   return {
